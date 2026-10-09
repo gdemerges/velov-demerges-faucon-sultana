@@ -14,3 +14,4 @@ mlruns/
 
 # Secrets
 .env
+!.env.example

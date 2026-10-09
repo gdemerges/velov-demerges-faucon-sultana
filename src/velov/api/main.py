@@ -25,6 +25,7 @@ import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 
+from velov import db
 from velov.api.schemas import PredictionRequest, PredictionResponse
 from velov.features import FEATURES, add_features
 from velov.train import METADATA_FILENAME, sha256_of
@@ -56,6 +57,12 @@ async def lifespan(app: FastAPI):
         logger.info("Modèle %s chargé", STATE["metadata"]["model_version"])
     except Exception:
         logger.exception("Échec du chargement du modèle depuis %s", model_dir)
+    url = db.database_url()
+    if url:
+        try:
+            db.init_db(url)
+        except Exception:
+            logger.exception("Base de données indisponible : les prédictions ne seront pas enregistrées")
     yield
     STATE.update(model=None, metadata=None)
 
@@ -84,9 +91,18 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     # add_features est partagé avec l'entraînement : le recalculer ici créerait un training-serving skew
     frame = add_features(pd.DataFrame([request.model_dump()]))
     raw = float(STATE["model"].predict(frame[FEATURES])[0])
-    return PredictionResponse(
+    response = PredictionResponse(
         station_id=request.station_id,
         target_timestamp=request.timestamp + timedelta(hours=1),
         predicted_bikes=min(max(raw, 0.0), request.capacity),
         model_version=STATE["metadata"]["model_version"],
     )
+    url = db.database_url()
+    if url:
+        try:
+            db.save_prediction(
+                url, response.station_id, response.target_timestamp, response.predicted_bikes, response.model_version
+            )
+        except Exception:
+            logger.exception("Échec de l'enregistrement de la prédiction")
+    return response
