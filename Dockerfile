@@ -12,7 +12,10 @@ RUN pip install -r requirements.txt
 
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-deps .
+RUN pip install --no-deps . \
+    && pip uninstall -y pip setuptools wheel 2>/dev/null; \
+    find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) -prune -exec rm -rf {} + ; \
+    find /opt/venv -name '*.pyi' -delete
 
 # --- Étape 2 : image d'exécution minimale ---
 FROM python:3.12-slim

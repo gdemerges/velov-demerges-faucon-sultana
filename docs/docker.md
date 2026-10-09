@@ -13,13 +13,14 @@ Image taguée `velov-api:<version>-<commit>` (labels OCI `version` et `revision`
 | Image | Taille |
 |---|---|
 | Mono-étape (`python:3.12-slim`, avant) | 535 Mo |
-| Multi-étape (actuelle, + psycopg) | 561 Mo |
+| Multi-étape sans optimisation (+ psycopg) | 561 Mo |
+| **Multi-étape optimisée (actuelle)** | **387 Mo** |
 | Base `python:3.12-slim` seule | ~130 Mo |
 | Base `python:3.12-alpine` seule | 59 Mo |
 
-Le multi-stage ne réduit pas la taille ici (pas de compilateur dans l'étape unique) ;
-son intérêt est l'absence de pip/cache et de sources dans l'image finale. L'essentiel du poids
-vient de scikit-learn, pandas et numpy. Alpine (musl) est déconseillé pour ces roues.
+Gains (-31 %) : `uvicorn` sans l'extra `[standard]` (uvloop, httptools, watchfiles inutiles),
+suppression de pip/setuptools, des dossiers `tests/`, `__pycache__` et fichiers `.pyi` du venv.
+Le reste est incompressible : scipy, pandas, sklearn et numpy. Alpine est déconseillé (roues musl).
 
 ## Scan Trivy
 ```bash
