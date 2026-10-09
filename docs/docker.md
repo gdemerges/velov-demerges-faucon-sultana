@@ -27,10 +27,13 @@ Le reste est incompressible : scipy, pandas, sklearn et numpy. Alpine est décon
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
   image --severity HIGH,CRITICAL --scanners vuln velov-api:1.0.0-<commit>
 ```
-Résultat (2026-10-09) : 44 vulnérabilités HIGH, **toutes dans les paquets Debian de la
-base** (util-linux, ncurses, perl-base...), aucune dans les dépendances Python. La base
-`python:3.12-slim` seule en a 43 : c'est hérité, sans correctif disponible pour la plupart.
-Action : reconstruire régulièrement pour récupérer les mises à jour de la base.
+Résultat (2026-10-09) : 44 HIGH au départ, toutes dans les paquets Debian de la base
+(aucune dans les dépendances Python), sans correctif publié par Debian.
+Le Dockerfile applique `apt-get upgrade` (correctifs dès leur publication) et purge les outils
+inutiles à une API (`mount`, `util-linux`, `bsdutils`, `ncurses-bin`, libs associées) avec
+`dpkg --force-remove-essential` : **44 -> 19 HIGH**. Restent `login` (protégé par dpkg),
+`libblkid1`, `libuuid1`, ncurses/systemd/acl/perl-base : sans correctif, risque faible
+(conteneur non-root, ces outils ne sont jamais appelés). Reconstruire avec `--pull` régulièrement.
 
 ## Publication sur GHCR
 ```bash

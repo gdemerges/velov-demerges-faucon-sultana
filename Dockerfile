@@ -35,7 +35,15 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY models ./models
 
-RUN useradd --system --uid 10001 --no-create-home app
+# Mises à jour de sécurité de la base, puis retrait des outils système inutiles à une API
+# (mount, login, util-linux, ncurses...) : moins de paquets = moins de CVE.
+# --force-remove-essential : ces paquets sont "essentiels" pour apt mais pas pour Python.
+RUN apt-get update \
+    && apt-get -y --no-install-recommends upgrade \
+    && useradd --system --uid 10001 --no-create-home app \
+    && dpkg --purge --force-depends --force-remove-essential mount util-linux bsdutils ncurses-bin liblastlog2-2 \
+        libmount1 libsmartcols1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 USER app
 
 EXPOSE 8000
