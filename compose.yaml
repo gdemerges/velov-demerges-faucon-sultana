@@ -46,6 +46,8 @@ services:
       DATABASE_URL: postgresql://velov:${POSTGRES_PASSWORD}@db:5432/velov
       OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
     restart: unless-stopped
+    healthcheck:
+      disable: true   # le HEALTHCHECK de l'image interroge /ready, que le collecteur ne sert pas
     depends_on:
       db:
         condition: service_healthy
