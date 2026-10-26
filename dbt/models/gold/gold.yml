@@ -1,0 +1,46 @@
+version: 2
+
+models:
+  - name: gold_training_hourly
+    description: >
+      Table d'entraînement au schéma du contrat de données (voir src/velov/contract.py,
+      qui valide la même chose côté Python avant l'entraînement).
+    config:
+      contract:
+        enforced: true
+    constraints:
+      - type: check
+        expression: "bikes_available <= capacity and bikes_next_hour <= capacity"
+        name: bikes_within_capacity
+    columns:
+      - name: station_id
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests:
+          - relationships:
+              arguments: {to: ref('silver_stations'), field: station_id}
+      - name: timestamp
+        data_type: timestamptz
+        constraints: [{type: not_null}]
+      - name: capacity
+        data_type: integer
+        constraints: [{type: not_null}]
+        data_tests:
+          - value_between:
+              arguments: {min_value: 1, max_value: 80}
+              config: {warn_if: ">0", error_if: ">5"}
+      - name: bikes_available
+        data_type: integer
+        constraints: [{type: not_null}]
+      - name: temperature
+        data_type: double precision
+        constraints: [{type: not_null}]
+      - name: is_raining
+        data_type: boolean
+        constraints: [{type: not_null}]
+      - name: bikes_next_hour
+        data_type: integer
+        constraints: [{type: not_null}]
+    data_tests:
+      - dbt_utils_free_unique_combination:
+          arguments: {columns: [station_id, timestamp]}

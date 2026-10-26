@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: Relevés bruts écrits par `python -m velov.ingest` (idempotent sur station et heure).
+    schema: bronze
+    tables:
+      - name: station_status
+        columns:
+          - name: station_id
+            data_tests: [not_null]
+          - name: observed_at
+            data_tests: [not_null]

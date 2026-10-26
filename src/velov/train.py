@@ -8,6 +8,7 @@ Ce qu'on distribue (S1) n'est pas "un modèle" mais un paquet :
 Usage :
     python -m velov.train --data data/velov_history.csv --out models/
     python -m velov.train --data data/velov_history.csv --out models/ --mlflow
+    DATABASE_URL=... python -m velov.train --from-gold --out models/    # table gold, contrat vérifié
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +37,7 @@ from velov.features import (
     NUMERIC_FEATURES,
     RAW_COLUMNS,
     TARGET,
+    add_features,
     make_training_frame,
 )
 
@@ -72,19 +75,29 @@ def temporal_split(df: pd.DataFrame, test_days: int) -> tuple[pd.DataFrame, pd.D
     return train, test
 
 
+def load_frame(data_path: Path | None, gold_url: str | None) -> tuple[pd.DataFrame, str]:
+    """Table d'entraînement et empreinte des données. Depuis gold, le contrat est vérifié d'abord (EX-12)."""
+    if gold_url:
+        from velov import contract
+
+        gold = contract.validate(contract.read_gold(gold_url))  # lève SchemaErrors : rien n'est entraîné
+        digest = hashlib.sha256(pd.util.hash_pandas_object(gold, index=False).to_numpy().tobytes()).hexdigest()
+        return add_features(gold), digest
+    if data_path is None or not data_path.exists():
+        raise FileNotFoundError(f"{data_path} introuvable : lancer d'abord `python -m velov.data`")
+    return make_training_frame(pd.read_csv(data_path, parse_dates=["timestamp"])), sha256_of(data_path)
+
+
 def train(
-    data_path: Path,
+    data_path: Path | None,
     out_dir: Path,
     version: str = "0.1.0",
     test_days: int = 14,
     seed: int = 42,
+    gold_url: str | None = None,
 ) -> dict:
     """Entraîne, évalue contre une baseline, écrit l'artefact. Retourne les métadonnées."""
-    if not data_path.exists():
-        raise FileNotFoundError(f"{data_path} introuvable : lancer d'abord `python -m velov.data`")
-
-    raw = pd.read_csv(data_path, parse_dates=["timestamp"])
-    frame = make_training_frame(raw)
+    frame, data_sha256 = load_frame(data_path, gold_url)
     train_df, test_df = temporal_split(frame, test_days)
 
     pipeline = build_pipeline(seed)
@@ -117,7 +130,8 @@ def train(
             "n_test": int(len(test_df)),
         },
         "artifact": {"file": MODEL_FILENAME, "sha256": sha256_of(model_path)},
-        "data_sha256": sha256_of(data_path),
+        "data_sha256": data_sha256,
+        "data_source": "gold" if gold_url else "csv",
         "runtime": {
             "python": platform.python_version(),
             "scikit-learn": sklearn.__version__,
@@ -168,12 +182,14 @@ def log_to_mlflow(metadata: dict, out_dir: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entraîne le modèle Vélo'v v0.")
     parser.add_argument("--data", type=Path, default=Path("data/velov_history.csv"))
+    parser.add_argument("--from-gold", action="store_true", help="lire gold.gold_training_hourly (DATABASE_URL)")
     parser.add_argument("--out", type=Path, default=Path("models"))
     parser.add_argument("--version", default="0.1.0")
     parser.add_argument("--mlflow", action="store_true", help="journaliser aussi dans MLflow")
     args = parser.parse_args()
 
-    metadata = train(args.data, args.out, version=args.version)
+    gold_url = os.environ["DATABASE_URL"] if args.from_gold else None
+    metadata = train(args.data, args.out, version=args.version, gold_url=gold_url)
     m = metadata["metrics"]
     print(f"MAE modèle   : {m['mae_model']:.3f} vélos")
     print(f"MAE baseline : {m['mae_baseline_persistence']:.3f} vélos (persistance)")

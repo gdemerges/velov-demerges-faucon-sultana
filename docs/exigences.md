@@ -17,6 +17,9 @@ qui dit oui ou non.
 | EX-07 | Les erreurs importantes sont observables dans les logs | Modèle non chargé, base indisponible : la cause est lisible dans les logs (terminal uvicorn en S1, `docker compose logs` en S2) | S1, S2 |
 | EX-08 | Chaque prédiction est traçable | Entrées, sortie, version du modèle et horodatage UTC journalisés en base | S2 |
 | EX-09 | Un autre binôme peut exploiter le service avec le README et le runbook | Revue croisée : démarrer, vérifier la santé, arrêter, diagnostiquer `/ready` en 503 | S2, S9 |
+| EX-10 | Rejouer le pipeline sur une même période ne change pas la table gold | `scripts/check_idempotence.sh` : empreinte de bronze et de gold identique après un second passage complet | S3 |
+| EX-11 | Aucune feature n'utilise une information postérieure à l'instant de prédiction | Test dbt `no_lookahead` : chaque feature de gold égale la valeur silver de la même heure ; seule la cible vient de l'heure suivante | S3 |
+| EX-12 | Une table gold qui viole le contrat n'est jamais publiée | Contrat dbt `enforced` + tests silver qui bloquent la construction de gold (`dbt build`) ; Pandera (`velov.contract`) refuse l'entraînement sur une table hors contrat (`tests/test_contract.py`) | S3 |
 
 ## Conventions associées
 

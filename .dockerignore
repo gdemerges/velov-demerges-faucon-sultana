@@ -13,3 +13,6 @@ mlruns
 .env
 requirements-dev.txt
 models
+dbt
+scripts
+requirements-pipeline.txt

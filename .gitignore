@@ -9,9 +9,12 @@ data/*
 !data/.gitkeep
 models/*
 !models/.gitkeep
+dbt/target/
+dbt/logs/
 mlflow.db
 mlruns/
 
 # Secrets
 .env
 !.env.example
+*.egg-info/

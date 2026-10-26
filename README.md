@@ -60,6 +60,55 @@ curl localhost:8000/ready            # 200 quand le modèle est chargé
 
 Tags d'image, scan Trivy, tailles et publication GHCR : [docs/docker.md](docs/docker.md).
 
+## Pipeline de données (TP3)
+
+```
+open data Lyon / simulateur --> bronze.station_status --dbt--> silver_station_status --> gold_training_hourly --> train.py
+        velov.ingest            (brut, 1 ligne/station/heure)   (typé, plausible)        (contrat enforced)    (Pandera)
+```
+
+Depuis un clone propre :
+
+```bash
+cp .env.example .env                         # puis changer POSTGRES_PASSWORD
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-pipeline.txt && pip install -e .
+./scripts/run_pipeline.sh                    # PostgreSQL + ingestion simulée (30 jours) + `dbt build`
+```
+
+`dbt build` doit finir sur `PASS=16 ... ERROR=0`. Ensuite, entraîner sur la table gold :
+
+```bash
+export DATABASE_URL=postgresql://velov:<mot de passe>@localhost:5432/velov     # DB_PORT du .env
+python -m velov.train --from-gold --out models/    # le contrat Pandera est vérifié avant d'entraîner
+```
+
+Collecte réelle (open data Métropole de Lyon + météo Open-Meteo), un relevé par heure :
+
+```bash
+docker compose --profile collect up -d --build collector
+docker compose logs -f collector                  # "grandlyon : 457 lignes lues, 457 ajoutées"
+```
+
+| Couche | Objet | Rôle |
+|---|---|---|
+| bronze | `bronze.station_status` | copie brute, clé (station, heure UTC), insertion `ON CONFLICT DO NOTHING` |
+| silver | `silver_station_status`, `silver_stations` | typage, dédoublonnage, relevés plausibles uniquement (0 <= vélos <= capacité) |
+| gold | `gold_training_hourly` | schéma du contrat (7 colonnes, types et contraintes `enforced`), cible `bikes_next_hour` |
+
+Tests de qualité (`dbt/models/*/*.yml`, `dbt/tests/`) : `not_null`, `relationships` (gold -> stations),
+capacité dans [1, 80] avec seuil (avertissement dès 1 ligne, échec au-delà de 5), unicité (station, heure),
+absence de regard vers le futur. Un test silver en échec empêche la reconstruction de gold.
+
+Choix batch / micro-batch / streaming : [ADR-0002](docs/adr/0002-batch-micro-batch-streaming.md).
+Exploitation : [runbook](docs/runbook.md).
+
+| Exigence | Preuve |
+|---|---|
+| EX-10 rejeu sans effet sur gold | `PATH=.venv/bin:$PATH ./scripts/check_idempotence.sh` |
+| EX-11 pas d'information du futur | test dbt `no_lookahead` (dans `dbt build`) |
+| EX-12 gold hors contrat jamais publiée | contrat dbt `enforced`, tests bloquants, `pytest tests/test_contract.py` |
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
@@ -72,10 +121,14 @@ Chaque rendu indique celles qu'il couvre et comment le vérifier.
 src/velov/
   data.py          simulateur de données (remplacé par l'open data en S3, même schéma)
   features.py      features partagées entraînement / API (anti training-serving skew)
-  train.py         entraînement, baseline, artefact + metadata.json, option MLflow
+  ingest.py        ingestion bronze idempotente (simulateur ou open data Lyon)
+  contract.py      contrat Pandera de la table gold
+  train.py         entraînement (CSV ou table gold), baseline, artefact + metadata.json, option MLflow
   api/main.py      FastAPI : /health, /ready, /v1/model, /v1/predict, /v1/predict/batch
   api/schemas.py   contrat d'entrée / sortie (Pydantic)
-tests/             pytest (features, API)
+dbt/               modèles silver et gold, contrat, tests de qualité
+scripts/           run_pipeline.sh, check_idempotence.sh
+tests/             pytest (features, API, contrat)
 docs/              templates : model card, runbook, ADR
 exercices/         démo pickle (S1)
 ```

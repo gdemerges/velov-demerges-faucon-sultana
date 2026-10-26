@@ -1,0 +1,25 @@
+version: 2
+
+models:
+  - name: silver_station_status
+    columns:
+      - name: station_id
+        data_tests: [not_null]
+      - name: observed_at
+        data_tests: [not_null]
+      - name: capacity
+        data_tests:
+          - not_null
+          - value_between:
+              arguments: {min_value: 1, max_value: 80}
+              config:
+                warn_if: ">0"
+                error_if: ">5"   # tolérance : jusqu'à 5 relevés aberrants, au-delà le build échoue
+    data_tests:
+      - dbt_utils_free_unique_combination:
+          arguments: {columns: [station_id, observed_at]}
+
+  - name: silver_stations
+    columns:
+      - name: station_id
+        data_tests: [not_null, unique]
