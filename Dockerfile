@@ -12,8 +12,14 @@ RUN pip install -r requirements.txt
 
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-deps . \
-    && pip uninstall -y pip setuptools wheel 2>/dev/null; \
+RUN pip install --no-deps .
+
+# Modèle entraîné dans l'image (données simulées, seed fixe) : models/ et data/ ne sont pas dans git,
+# un clone propre doit pouvoir construire une image qui répond 200 sur /ready.
+RUN python -m velov.data --out /build/data/velov_history.csv \
+    && python -m velov.train --data /build/data/velov_history.csv --out /build/models
+
+RUN pip uninstall -y pip setuptools wheel 2>/dev/null; \
     find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) -prune -exec rm -rf {} + ; \
     find /opt/venv -name '*.pyi' -delete
 
@@ -33,7 +39,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY models ./models
+COPY --from=builder /build/models ./models
 
 # Mises à jour de sécurité de la base, puis retrait des outils système inutiles à une API
 # (mount, login, util-linux, ncurses...) : moins de paquets = moins de CVE.

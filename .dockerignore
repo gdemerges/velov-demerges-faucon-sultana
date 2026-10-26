@@ -12,3 +12,4 @@ mlflow.db
 mlruns
 .env
 requirements-dev.txt
+models

@@ -41,4 +41,4 @@ echo $GITHUB_TOKEN | docker login ghcr.io -u gdemerges --password-stdin   # toke
 docker tag velov-api:1.0.0-<commit> ghcr.io/gdemerges/velov-api:1.0.0-<commit>
 docker push ghcr.io/gdemerges/velov-api:1.0.0-<commit>
 ```
-Attention : le modèle (`models/`) est embarqué dans l'image ; garder le paquet **privé**.
+Attention : le modèle est entraîné dans l'étape de build puis embarqué dans l'image ; garder le paquet **privé**.

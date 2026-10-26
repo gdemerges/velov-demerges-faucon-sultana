@@ -48,6 +48,18 @@ curl -X POST http://127.0.0.1:8000/v1/predict \
 Le `timestamp` doit porter un fuseau (`+02:00`, `Z`...) : sans fuseau, l'API répond 422.
 Les instants sont renvoyés et journalisés en UTC (`"target_timestamp": "2026-10-06T07:00:00Z"`).
 
+## Docker
+
+Depuis un clone propre (le modèle est entraîné pendant le build, rien à générer avant) :
+
+```bash
+cp .env.example .env                 # puis changer POSTGRES_PASSWORD
+docker compose up -d --build         # API + PostgreSQL ; API_PORT=8001 si le port 8000 est pris
+curl localhost:8000/ready            # 200 quand le modèle est chargé
+```
+
+Tags d'image, scan Trivy, tailles et publication GHCR : [docs/docker.md](docs/docker.md).
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
