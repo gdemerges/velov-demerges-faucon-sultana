@@ -1,5 +1,5 @@
 # Dépendances du pipeline de données (ingestion, dbt, contrat) : jamais dans l'image de serving.
--r requirements.txt
+-r requirements-train.txt
 dbt-core==1.12.6
 dbt-postgres==1.11.0
 pandera==0.35.0

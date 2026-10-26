@@ -7,17 +7,21 @@ WORKDIR /build
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Deux environnements : /opt/venv (serving, part en production) et /opt/train (+ scikit-learn, skl2onnx),
+# qui ne sert qu'à entraîner et exporter le modèle en ONNX ici, puis reste dans l'étape jetée (ADR-0003).
+COPY requirements.txt requirements-train.txt ./
+RUN pip install -r requirements.txt \
+    && python -m venv /opt/train \
+    && /opt/train/bin/pip install -r requirements-train.txt
 
 COPY pyproject.toml ./
 COPY src ./src
-RUN pip install --no-deps .
+RUN pip install --no-deps . && /opt/train/bin/pip install --no-deps .
 
 # Modèle entraîné dans l'image (données simulées, seed fixe) : models/ et data/ ne sont pas dans git,
 # un clone propre doit pouvoir construire une image qui répond 200 sur /ready.
-RUN python -m velov.data --out /build/data/velov_history.csv \
-    && python -m velov.train --data /build/data/velov_history.csv --out /build/models
+RUN /opt/train/bin/python -m velov.data --out /build/data/velov_history.csv \
+    && /opt/train/bin/python -m velov.train --data /build/data/velov_history.csv --out /build/models
 
 RUN pip uninstall -y pip setuptools wheel 2>/dev/null; \
     find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) -prune -exec rm -rf {} + ; \
@@ -39,7 +43,8 @@ ENV PATH="/opt/venv/bin:$PATH" \
 
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /build/models ./models
+# Seuls le graphe ONNX et ses métadonnées : model.joblib (scikit-learn) reste dans l'étape de build.
+COPY --from=builder /build/models/model.onnx /build/models/metadata.json ./models/
 
 # Mises à jour de sécurité de la base, puis retrait des outils système inutiles à une API
 # (mount, login, util-linux, ncurses...) : moins de paquets = moins de CVE.

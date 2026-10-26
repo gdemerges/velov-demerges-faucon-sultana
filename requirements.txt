@@ -1,11 +1,12 @@
 # Dépendances de SERVING uniquement (ce qui part dans l'image Docker).
-# Versions épinglées : le modèle doit être servi avec les versions qui l'ont entraîné
-# (un pickle scikit-learn n'est pas garanti entre deux versions mineures).
+# Le modèle est servi en ONNX (ADR-0003) : ni scikit-learn ni SciPy dans l'image.
+# Versions épinglées : onnxruntime doit savoir exécuter l'opset de l'export (voir metadata.json).
 fastapi==0.142.2
 uvicorn==0.46.0
 pydantic==2.13.5
-scikit-learn==1.9.1
+onnxruntime==1.31.0
+# protobuf >= 7.34 rejette des attributs que skl2onnx 1.20 produit encore (booléens) : on fige la version testée.
+protobuf==6.33.6
 pandas==3.0.2
 numpy==2.4.6
-joblib==1.5.3
 psycopg[binary]==3.2.10

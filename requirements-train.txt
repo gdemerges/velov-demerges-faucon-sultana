@@ -1,0 +1,7 @@
+# Dépendances d'ENTRAÎNEMENT : serving + scikit-learn et l'export ONNX.
+# Utilisées dans l'étape builder du Dockerfile, jamais copiées dans l'image finale.
+-r requirements.txt
+scikit-learn==1.9.1
+joblib==1.5.3
+skl2onnx==1.20.0
+onnx==1.23.2

@@ -1,6 +1,6 @@
 # ADR-0001 : Format de sérialisation du modèle v0
 
-- Statut : accepté
+- Statut : remplacé par ADR-0003 pour le serving (joblib reste produit pour MLflow)
 - Date : 2026-10-06
 - Auteurs : équipe pédagogique (exemple d'ADR rempli)
 

@@ -1,7 +1,8 @@
 """Entraînement du modèle v0 et production de l'artefact distribuable.
 
 Ce qu'on distribue (S1) n'est pas "un modèle" mais un paquet :
-- le pipeline sklearn complet (prétraitement + modèle) -> models/model.joblib
+- le pipeline complet (prétraitement + modèle) exporté en ONNX -> models/model.onnx (servi par l'API, ADR-0003)
+- le même pipeline scikit-learn -> models/model.joblib (MLflow, analyse ; jamais dans l'image)
 - ses métadonnées (version, features, métriques, empreinte SHA-256, versions des
   librairies, hash des données) -> models/metadata.json
 
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import platform
@@ -31,6 +33,7 @@ from sklearn.metrics import mean_absolute_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
+from velov.artifact import METADATA_FILENAME, ONNX_FILENAME, onnx_feeds, sha256_of
 from velov.features import (
     CATEGORICAL_FEATURES,
     FEATURES,
@@ -42,16 +45,10 @@ from velov.features import (
 )
 
 MODEL_FILENAME = "model.joblib"
-METADATA_FILENAME = "metadata.json"
 SKOPS_TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor"]
-
-
-def sha256_of(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# Écart maximal toléré entre ONNX et scikit-learn, en vélos. Mesuré : ~1e-5 (seuils float32 dans ONNX).
+ONNX_MAX_ABS_DIFF = 1e-3
+ONNX_OPSET = {"": 17, "ai.onnx.ml": 3}
 
 
 def build_pipeline(seed: int = 42) -> Pipeline:
@@ -63,6 +60,29 @@ def build_pipeline(seed: int = 42) -> Pipeline:
     )
     model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.1, random_state=seed)
     return Pipeline([("preprocess", preprocess), ("model", model)])
+
+
+def export_onnx(pipeline: Pipeline, path: Path, X_check: pd.DataFrame) -> float:
+    """Exporte le pipeline en ONNX et vérifie qu'il prédit comme scikit-learn. Retourne l'écart maximal.
+
+    Raises:
+        RuntimeError: si l'écart dépasse ONNX_MAX_ABS_DIFF : le modèle servi doit être celui qui a été évalué.
+    """
+    import onnxruntime as ort
+    from skl2onnx import to_onnx
+    from skl2onnx.common.data_types import FloatTensorType, StringTensorType
+
+    initial_types = [(c, StringTensorType([None, 1])) for c in CATEGORICAL_FEATURES]
+    initial_types += [(c, FloatTensorType([None, 1])) for c in NUMERIC_FEATURES]
+    onx = to_onnx(pipeline, initial_types=initial_types, target_opset=ONNX_OPSET)
+    path.write_bytes(onx.SerializeToString())
+
+    session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+    pred_onnx = session.run(None, onnx_feeds(X_check))[0].ravel()
+    max_diff = float(np.abs(pred_onnx - pipeline.predict(X_check)).max())
+    if max_diff > ONNX_MAX_ABS_DIFF:
+        raise RuntimeError(f"Export ONNX infidèle : écart max {max_diff:.2e} vélo > {ONNX_MAX_ABS_DIFF}")
+    return max_diff
 
 
 def temporal_split(df: pd.DataFrame, test_days: int) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -111,8 +131,9 @@ def train(
     mae_baseline = float(mean_absolute_error(y_test, test_df["bikes_available"]))
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    model_path = out_dir / MODEL_FILENAME
-    joblib.dump(pipeline, model_path)
+    joblib.dump(pipeline, out_dir / MODEL_FILENAME)
+    onnx_path = out_dir / ONNX_FILENAME
+    onnx_max_diff = export_onnx(pipeline, onnx_path, test_df[FEATURES])
 
     metadata = {
         "model_name": "velov-availability",
@@ -129,7 +150,13 @@ def train(
             "n_train": int(len(train_df)),
             "n_test": int(len(test_df)),
         },
-        "artifact": {"file": MODEL_FILENAME, "sha256": sha256_of(model_path)},
+        "artifact": {
+            "file": ONNX_FILENAME,
+            "format": "onnx",
+            "sha256": sha256_of(onnx_path),
+            "opset": ONNX_OPSET,
+            "max_abs_diff_vs_sklearn": onnx_max_diff,
+        },
         "data_sha256": data_sha256,
         "data_source": "gold" if gold_url else "csv",
         "runtime": {
@@ -137,6 +164,8 @@ def train(
             "scikit-learn": sklearn.__version__,
             "pandas": pd.__version__,
             "numpy": np.__version__,
+            "skl2onnx": importlib.metadata.version("skl2onnx"),
+            "onnxruntime": importlib.metadata.version("onnxruntime"),
         },
     }
     (out_dir / METADATA_FILENAME).write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -193,7 +222,8 @@ def main() -> None:
     m = metadata["metrics"]
     print(f"MAE modèle   : {m['mae_model']:.3f} vélos")
     print(f"MAE baseline : {m['mae_baseline_persistence']:.3f} vélos (persistance)")
-    print(f"Artefact     : {args.out / MODEL_FILENAME} (sha256 {metadata['artifact']['sha256'][:12]}...)")
+    print(f"Artefact     : {args.out / ONNX_FILENAME} (sha256 {metadata['artifact']['sha256'][:12]}..., "
+          f"écart ONNX / sklearn {metadata['artifact']['max_abs_diff_vs_sklearn']:.1e} vélo)")
     if args.mlflow:
         log_to_mlflow(metadata, args.out)
         print("Run journalisé dans MLflow (voir `mlflow ui`)")

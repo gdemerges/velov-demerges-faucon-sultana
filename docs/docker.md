@@ -14,13 +14,16 @@ Image taguée `velov-api:<version>-<commit>` (labels OCI `version` et `revision`
 |---|---|
 | Mono-étape (`python:3.12-slim`, avant) | 535 Mo |
 | Multi-étape sans optimisation (+ psycopg) | 561 Mo |
-| **Multi-étape optimisée (actuelle)** | **387 Mo** |
+| Multi-étape optimisée (modèle joblib, scikit-learn dans l'image) | 345 Mo |
+| **Multi-étape, modèle ONNX (actuelle, ADR-0003)** | **289 Mo** |
 | Base `python:3.12-slim` seule | ~130 Mo |
 | Base `python:3.12-alpine` seule | 59 Mo |
 
 Gains (-31 %) : `uvicorn` sans l'extra `[standard]` (uvloop, httptools, watchfiles inutiles),
 suppression de pip/setuptools, des dossiers `tests/`, `__pycache__` et fichiers `.pyi` du venv.
-Le reste est incompressible : scipy, pandas, sklearn et numpy. Alpine est déconseillé (roues musl).
+Puis 345 -> 289 Mo (-16 %) en servant le modèle en ONNX ([ADR-0003](adr/0003-serving-onnx.md)) : scikit-learn,
+SciPy et joblib (119 Mo) sortent de l'image, onnxruntime (63 Mo) entre. Il reste surtout onnxruntime, pandas, numpy
+et psycopg. `strip` des bibliothèques testé : 2 Mo de gain, non retenu. Alpine est déconseillé (roues musl).
 
 ## Scan Trivy
 ```bash

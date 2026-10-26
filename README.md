@@ -26,11 +26,11 @@ Prérequis : Python 3.11+ (3.12 recommandé), git. Docker sera nécessaire en S2
 ```bash
 python -m venv .venv
 source .venv/bin/activate            # Windows : .venv\Scripts\activate
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt     # serving (requirements.txt) + entraînement (requirements-train.txt) + pipeline
 pip install -e .                     # rend le package velov importable
 
 python -m velov.data                 # génère data/velov_history.csv (simulateur, seed fixe)
-python -m velov.train                # entraîne et écrit models/model.joblib + models/metadata.json
+python -m velov.train                # entraîne, exporte models/model.onnx (servi) + model.joblib + metadata.json
 python -m velov.train --mlflow       # idem + journalisation MLflow (puis : mlflow ui)
 pytest                               # tests
 uvicorn velov.api.main:app --reload  # API sur http://127.0.0.1:8000/docs (--reload : en dev uniquement)

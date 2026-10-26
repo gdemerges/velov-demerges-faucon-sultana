@@ -21,14 +21,14 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
-import joblib
+import onnxruntime as ort
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 
 from velov import db
 from velov.api.schemas import PredictionRequest, PredictionResponse
+from velov.artifact import METADATA_FILENAME, onnx_feeds, sha256_of
 from velov.features import FEATURES, add_features
-from velov.train import METADATA_FILENAME, sha256_of
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("velov.api")
@@ -37,7 +37,7 @@ STATE: dict = {"model": None, "metadata": None}
 
 
 def load_model(model_dir: Path) -> tuple[object, dict]:
-    """Fourni : charge le modèle APRÈS avoir vérifié son empreinte SHA-256."""
+    """Charge le modèle ONNX APRÈS avoir vérifié son empreinte SHA-256 (ADR-0001, ADR-0003)."""
     metadata_path = model_dir / METADATA_FILENAME
     if not metadata_path.exists():
         raise FileNotFoundError(f"{metadata_path} introuvable")
@@ -45,7 +45,8 @@ def load_model(model_dir: Path) -> tuple[object, dict]:
     model_path = model_dir / metadata["artifact"]["file"]
     if sha256_of(model_path) != metadata["artifact"]["sha256"]:
         raise RuntimeError(f"Empreinte invalide pour {model_path}")
-    return joblib.load(model_path), metadata
+    # ONNX : un graphe de calcul, aucun code exécuté au chargement (contrairement à pickle / joblib).
+    return ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"]), metadata
 
 
 @asynccontextmanager
@@ -90,7 +91,7 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     # add_features est partagé avec l'entraînement : le recalculer ici créerait un training-serving skew
     frame = add_features(pd.DataFrame([request.model_dump()]))
-    raw = float(STATE["model"].predict(frame[FEATURES])[0])
+    raw = float(STATE["model"].run(None, onnx_feeds(frame[FEATURES]))[0].ravel()[0])
     response = PredictionResponse(
         station_id=request.station_id,
         target_timestamp=request.timestamp + timedelta(hours=1),
