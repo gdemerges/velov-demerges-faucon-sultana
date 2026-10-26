@@ -7,7 +7,7 @@ de l'heure est conservé.
 
 Deux sources, même schéma :
     simulator  historique reproductible (seed fixe), pour démarrer depuis un clone propre
-    grandlyon  relevé temps réel Vélo'v (open data Métropole de Lyon) + météo Open-Meteo
+    grandlyon  relevé temps réel Vélo'v (open data Métropole de Lyon) + météo OpenWeatherMap (Open-Meteo à défaut)
 
 Usage :
     python -m velov.ingest --source simulator --days 30
@@ -33,10 +33,12 @@ from velov.data import simulate
 logger = logging.getLogger("velov.ingest")
 
 GRANDLYON_URL = "https://data.grandlyon.com/fr/datapusher/ws/rdata/jcd_jcdecaux.jcdvelov/all.json?compact=false&maxfeatures=-1"
+OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather?lat=45.76&lon=4.84&units=metric&appid={key}"
 OPEN_METEO_URL = (
     "https://api.open-meteo.com/v1/forecast?latitude=45.76&longitude=4.84&current=temperature_2m,precipitation"
 )
 
+RAIN_CONDITIONS = {"Rain", "Drizzle", "Thunderstorm"}
 COLUMNS = ["station_id", "observed_at", "capacity", "bikes_available", "temperature", "is_raining"]
 
 DDL = """
@@ -60,6 +62,25 @@ def _get_json(url: str) -> dict:
         return json.load(resp)
 
 
+def fetch_weather() -> tuple[float, bool]:
+    """(température °C, pluie ?) à Lyon. OpenWeatherMap si OPENWEATHER_API_KEY est définie, sinon Open-Meteo.
+
+    Si OpenWeatherMap échoue (clé pas encore activée, quota, panne), on se rabat sur Open-Meteo :
+    mieux vaut une météo d'une autre source qu'un relevé de stations perdu pour toujours.
+    """
+    key = os.getenv("OPENWEATHER_API_KEY")
+    if key:
+        try:
+            data = _get_json(OPENWEATHER_URL.format(key=key))
+            raining = bool(data.get("rain", {}).get("1h", 0)) or data["weather"][0]["main"] in RAIN_CONDITIONS
+            return float(data["main"]["temp"]), raining
+        except Exception as exc:
+            # exc seul : l'URL (donc la clé) n'est pas journalisée.
+            logger.warning("OpenWeatherMap indisponible (%s), repli sur Open-Meteo", type(exc).__name__)
+    current = _get_json(OPEN_METEO_URL)["current"]
+    return float(current["temperature_2m"]), current["precipitation"] > 0
+
+
 def fetch_simulator(days: int, stations: int, start: str, seed: int) -> pd.DataFrame:
     df = simulate(days=days, n_stations=stations, start=start, seed=seed)
     return df.rename(columns={"timestamp": "observed_at"})[COLUMNS]
@@ -68,7 +89,7 @@ def fetch_simulator(days: int, stations: int, start: str, seed: int) -> pd.DataF
 def fetch_grandlyon(now: datetime | None = None) -> pd.DataFrame:
     """Un relevé de toutes les stations, horodaté à l'heure UTC pleine de la collecte."""
     observed_at = (now or datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
-    weather = _get_json(OPEN_METEO_URL)["current"]
+    temperature, is_raining = fetch_weather()
     stations = _get_json(GRANDLYON_URL)["values"]
     rows = [
         {
@@ -76,8 +97,8 @@ def fetch_grandlyon(now: datetime | None = None) -> pd.DataFrame:
             "observed_at": observed_at,
             "capacity": s.get("bike_stands"),
             "bikes_available": s.get("available_bikes"),
-            "temperature": weather["temperature_2m"],
-            "is_raining": weather["precipitation"] > 0,
+            "temperature": temperature,
+            "is_raining": is_raining,
         }
         for s in stations
     ]

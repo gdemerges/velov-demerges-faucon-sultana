@@ -83,7 +83,7 @@ export DATABASE_URL=postgresql://velov:<mot de passe>@localhost:5432/velov     #
 python -m velov.train --from-gold --out models/    # le contrat Pandera est vérifié avant d'entraîner
 ```
 
-Collecte réelle (open data Métropole de Lyon + météo Open-Meteo), un relevé par heure :
+Collecte réelle (open data Métropole de Lyon + météo OpenWeatherMap, clé `OPENWEATHER_API_KEY` dans `.env` ; Open-Meteo sans clé à défaut), un relevé par heure :
 
 ```bash
 docker compose --profile collect up -d --build collector
