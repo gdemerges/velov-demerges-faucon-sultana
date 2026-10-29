@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 
+import numpy as np
 from fastapi.testclient import TestClient
 
 from velov.artifact import ONNX_FILENAME
@@ -43,3 +44,20 @@ def test_tampered_onnx_is_refused(model_dir, tmp_path, monkeypatch):
 
     with TestClient(app) as c:
         assert c.get("/ready").status_code == 503
+
+
+def test_export_exact_when_value_falls_on_threshold(tmp_path):
+    # Régression (train --from-gold) : scikit-learn place ses seuils au milieu de deux valeurs vues
+    # (26,7 et 26,9 -> 26,799999999999997). Une valeur jamais vue, 26,8, tombe juste au-dessus en float64
+    # mais devient ÉGALE au seuil en float32 : un arbre ONNX en float32 l'envoyait de l'autre côté.
+    from velov.data import simulate
+    from velov.features import FEATURES, TARGET, make_training_frame
+    from velov.train import build_pipeline, export_onnx
+
+    frame = make_training_frame(simulate(days=10, n_stations=2, seed=0))
+    temps = np.where(np.arange(len(frame)) % 2 == 0, 26.7, 26.9)
+    frame = frame.assign(temperature=temps, **{TARGET: np.where(temps > 26.8, 10.0, 0.0)})
+    pipeline = build_pipeline().fit(frame[FEATURES], frame[TARGET])
+    X_check = frame[FEATURES].head(20).assign(temperature=26.8)
+    assert pipeline.predict(X_check).min() > 5  # scikit-learn : 26,8 > seuil, branche "chaude"
+    assert export_onnx(pipeline, tmp_path / "m.onnx", X_check) <= ONNX_MAX_ABS_DIFF

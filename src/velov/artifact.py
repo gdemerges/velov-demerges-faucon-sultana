@@ -27,10 +27,11 @@ def sha256_of(path: Path) -> str:
 
 
 def onnx_feeds(X: pd.DataFrame) -> dict[str, np.ndarray]:
-    """Une entrée ONNX par feature, dans le type déclaré à l'export : texte pour la station, float32 sinon.
+    """Une entrée ONNX par feature, dans le type déclaré à l'export : texte pour la station, float64 sinon.
 
-    Utilisée à l'export (contrôle d'écart avec scikit-learn) et par l'API : la même conversion des deux côtés.
+    float64 et non float32 : les seuils de l'arbre sont comparés en double, comme dans scikit-learn
+    (voir velov.train.use_exact_thresholds). Utilisée à l'export et par l'API : la même conversion des deux côtés.
     """
     feeds = {c: X[[c]].astype(str).to_numpy() for c in CATEGORICAL_FEATURES}
-    feeds |= {c: X[[c]].astype(np.float32).to_numpy() for c in NUMERIC_FEATURES}
+    feeds |= {c: X[[c]].astype(np.float64).to_numpy() for c in NUMERIC_FEATURES}
     return feeds

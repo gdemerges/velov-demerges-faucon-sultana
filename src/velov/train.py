@@ -46,7 +46,7 @@ from velov.features import (
 
 MODEL_FILENAME = "model.joblib"
 SKOPS_TRUSTED_TYPES = ["sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor"]
-# Écart maximal toléré entre ONNX et scikit-learn, en vélos. Mesuré : ~1e-5 (seuils float32 dans ONNX).
+# Écart maximal toléré entre ONNX et scikit-learn, en vélos. Mesuré : ~1e-6 (feuilles sommées en float32).
 ONNX_MAX_ABS_DIFF = 1e-3
 ONNX_OPSET = {"": 17, "ai.onnx.ml": 3}
 
@@ -62,6 +62,51 @@ def build_pipeline(seed: int = 42) -> Pipeline:
     return Pipeline([("preprocess", preprocess), ("model", model)])
 
 
+def use_exact_thresholds(onx, pipeline: Pipeline) -> None:
+    """Remplace les seuils float32 de l'arbre ONNX par les seuils float64 exacts de scikit-learn.
+
+    skl2onnx 1.20 écrit les seuils du HistGradientBoosting en float32. Or scikit-learn les place au milieu
+    de deux valeurs vues (26,7 et 26,9 -> 26,799999999999997) : une valeur jamais vue (26,8) est juste
+    au-dessus en float64 mais égale au seuil en float32, et part dans l'autre branche (écart de 0,4 vélo
+    constaté sur la table gold). nodes_values_as_tensor (ai.onnx.ml >= 3) garde des seuils float64 ;
+    onnxruntime compare alors en double, comme scikit-learn. La sortie de l'arbre reste en float32.
+    """
+    import onnx
+    from onnx import numpy_helper
+
+    (tree,) = [n for n in onx.graph.node if n.op_type == "TreeEnsembleRegressor"]
+    attrs = {a.name: a for a in tree.attribute}
+    modes = onnx.helper.get_attribute_value(attrs["nodes_modes"])
+    values_f32 = onnx.helper.get_attribute_value(attrs["nodes_values"])
+    # Même ordre de parcours que le convertisseur : arbres puis nœuds, feuilles exclues.
+    exact = iter(
+        float(node["num_threshold"])
+        for predictors in pipeline.named_steps["model"]._predictors
+        for predictor in predictors
+        for node in predictor.nodes
+        if not node["is_leaf"]
+    )
+    values = []
+    for mode, value in zip(modes, values_f32, strict=True):
+        threshold = 0.0 if mode == b"LEAF" else next(exact)
+        if np.float32(threshold) != np.float32(value):  # garde-fou : l'ordre des nœuds a changé
+            raise RuntimeError("Seuils ONNX et scikit-learn désalignés : vérifier la version de skl2onnx")
+        values.append(threshold)
+    if next(exact, None) is not None:
+        raise RuntimeError("Seuils ONNX et scikit-learn désalignés : nombre de nœuds différent")
+
+    tree.attribute.remove(attrs["nodes_values"])
+    exact_tensor = numpy_helper.from_array(np.array(values, dtype=np.float64))
+    tree.attribute.append(onnx.helper.make_attribute("nodes_values_as_tensor", exact_tensor))
+    for opset in onx.opset_import:
+        if opset.domain == "ai.onnx.ml":
+            opset.version = max(opset.version, 3)  # skl2onnx déclare 1, l'attribut tensor exige 3
+    # onnxruntime renvoie du float32 pour TreeEnsembleRegressor, même en entrée float64.
+    (output,) = [o for o in onx.graph.output if o.name == tree.output[0]]
+    output.type.tensor_type.elem_type = onnx.TensorProto.FLOAT
+    onnx.checker.check_model(onx)
+
+
 def export_onnx(pipeline: Pipeline, path: Path, X_check: pd.DataFrame) -> float:
     """Exporte le pipeline en ONNX et vérifie qu'il prédit comme scikit-learn. Retourne l'écart maximal.
 
@@ -70,11 +115,12 @@ def export_onnx(pipeline: Pipeline, path: Path, X_check: pd.DataFrame) -> float:
     """
     import onnxruntime as ort
     from skl2onnx import to_onnx
-    from skl2onnx.common.data_types import FloatTensorType, StringTensorType
+    from skl2onnx.common.data_types import DoubleTensorType, StringTensorType
 
     initial_types = [(c, StringTensorType([None, 1])) for c in CATEGORICAL_FEATURES]
-    initial_types += [(c, FloatTensorType([None, 1])) for c in NUMERIC_FEATURES]
+    initial_types += [(c, DoubleTensorType([None, 1])) for c in NUMERIC_FEATURES]
     onx = to_onnx(pipeline, initial_types=initial_types, target_opset=ONNX_OPSET)
+    use_exact_thresholds(onx, pipeline)
     path.write_bytes(onx.SerializeToString())
 
     session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
