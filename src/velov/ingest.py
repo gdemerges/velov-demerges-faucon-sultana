@@ -32,7 +32,9 @@ from velov.data import simulate
 
 logger = logging.getLogger("velov.ingest")
 
-GRANDLYON_URL = "https://data.grandlyon.com/fr/datapusher/ws/rdata/jcd_jcdecaux.jcdvelov/all.json?compact=false&maxfeatures=-1"
+GRANDLYON_URL = (
+    "https://data.grandlyon.com/fr/datapusher/ws/rdata/jcd_jcdecaux.jcdvelov/all.json?compact=false&maxfeatures=-1"
+)
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather?lat=45.76&lon=4.84&units=metric&appid={key}"
 OPEN_METEO_URL = (
     "https://api.open-meteo.com/v1/forecast?latitude=45.76&longitude=4.84&current=temperature_2m,precipitation"
