@@ -30,9 +30,28 @@
 | Latence élevée | | | |
 
 ## 5. Déployer une nouvelle version du modèle
-1.
-2.
-3. Retour arrière (rollback) :
+Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.0.1:5000`) :
+1. Vérifier la décision : `python -m velov.promote --from-gold` (challenger, champion et persistance sur la
+   même fenêtre). Si elle dit PROMOUVOIR et qu'on est d'accord : `python -m velov.promote --from-gold --apply`
+   (l'ancien champion prend l'alias `previous-champion`, la raison est taguée sur la version).
+2. Livrer : `git pull origin tp4 && ./scripts/release.sh` (export de `@champion`, image
+   `velov-api:m<version>-<commit>`, redémarrage de l'API, attend le healthcheck).
+3. Contrôler : `curl -s localhost:8000/v1/model` -> `registry.version` est la nouvelle version.
+4. Retour arrière (rollback) :
+   - le plus rapide, sans build : `docker image ls velov-api`, puis
+     `API_IMAGE=velov-api:m<ancienne version>-<commit> docker compose up -d --no-build --wait api` ;
+   - par le registre : `python -m velov.promote --rollback` (champion <- previous-champion), puis
+     `./scripts/release.sh`. `./scripts/release.sh previous-champion` livre l'ancien modèle sans toucher aux alias.
+
+### Serveur MLflow
+| Vérification | Commande | Attendu |
+|---|---|---|
+| La stack tourne | `docker compose -f compose.yaml -f compose.mlflow.yaml ps` | `db` healthy, `mlflow` Up (healthy), `mlflow-db-init` Exited (0) |
+| Le serveur répond | `curl -s localhost:5000/health` | `OK` |
+| 403 `Invalid Host header` | en-tête Host absent de `--allowed-hosts` (MLflow >= 3.5) | ajouter l'hôte:port dans `compose.mlflow.yaml` |
+
+`docker compose down -v` supprime aussi le registre (base `mlflow` dans le volume `pgdata`, artefacts dans
+`mlartifacts`) : ne jamais l'utiliser sur la VM.
 
 ## 6. Contacts et escalade
 -

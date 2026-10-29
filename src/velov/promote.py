@@ -144,15 +144,15 @@ def report(result: dict) -> str:
     w, m, k = result["window"], result["metrics"], result["champion_metrics"]
     lines = [
         f"Fenêtre de test : {w['start']} -> {w['end']} UTC, {w['n_rows']} lignes",
-        f"challenger v{result['challenger'].version} : MAE {m['mae_model']:.3f} "
+        f"{'challenger v' + str(result['challenger'].version):<16}: MAE {m['mae_model']:.3f} "
         f"(heures de pointe {m['mae_model_peak_hours']:.3f})",
     ]
     if k is not None:
         lines.append(
-            f"champion v{result['champion'].version}   : MAE {k['mae_model']:.3f} "
+            f"{'champion v' + str(result['champion'].version):<16}: MAE {k['mae_model']:.3f} "
             f"(heures de pointe {k['mae_model_peak_hours']:.3f})"
         )
-    lines.append(f"persistance     : MAE {m['mae_baseline_persistence']:.3f}")
+    lines.append(f"{'persistance':<16}: MAE {m['mae_baseline_persistence']:.3f}")
     lines.append(f"Décision : {'PROMOUVOIR' if result['promote'] else 'GARDER LE CHAMPION'} ({result['reason']})")
     return "\n".join(lines)
 

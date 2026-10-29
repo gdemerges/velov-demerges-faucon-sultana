@@ -20,6 +20,11 @@ qui dit oui ou non.
 | EX-10 | Rejouer le pipeline sur une même période ne change pas la table gold | `scripts/check_idempotence.sh` : empreinte de bronze et de gold identique après un second passage complet | S3 |
 | EX-11 | Aucune feature n'utilise une information postérieure à l'instant de prédiction | Test dbt `no_lookahead` : chaque feature de gold égale la valeur silver de la même heure ; seule la cible vient de l'heure suivante | S3 |
 | EX-12 | Une table gold qui viole le contrat n'est jamais publiée | Contrat dbt `enforced` + tests silver qui bloquent la construction de gold (`dbt build`) ; Pandera (`velov.contract`) refuse l'entraînement sur une table hors contrat (`tests/test_contract.py`) | S3 |
+| EX-13 | Le modèle servi est retrouvable jusqu'à son code et ses données | `GET /v1/model` donne la version du registre et le run ; le run porte commit, `git_dirty`, empreinte et période des données, paramètres, métriques (`tests/test_registry.py`) | S4 |
+| EX-14 | Un modèle n'est promu que s'il bat le champion et la persistance sur la même fenêtre | Sortie de `velov.promote`, tag `promotion` sur la version, alias `previous-champion` ; règle testée (`tests/test_model_quality.py`) | S4 |
+| EX-15 | Rien n'arrive sur main sans CI au vert | Workflow `ci` (lint, tests, secrets, données, image) ; protection de branche sur main exigeant ces jobs | S4 |
+
+EX-05 et EX-06 sont vérifiées par la CI à chaque push depuis S4 (`test_model_beats_persistence_baseline`, job `secrets`).
 
 ## Conventions associées
 
