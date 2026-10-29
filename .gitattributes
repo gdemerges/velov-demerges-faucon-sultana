@@ -1,0 +1,2 @@
+# Scripts shell exécutés sur la VM et dans la CI (Linux) : fins de ligne LF, quel que soit le poste.
+*.sh text eol=lf
