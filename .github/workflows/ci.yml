@@ -1,0 +1,133 @@
+# CI du projet (S4) : ce commit est-il livrable ? Le code, les données, le modèle et l'image sont vérifiés.
+# La livraison du modèle, elle, se fait sur la VM (scripts/release.sh) : le runner GitHub ne joint pas
+# le réseau de l'école, ni donc le serveur MLflow (S4 · 34).
+#
+# Actions tierces épinglées par SHA de commit (un tag peut être déplacé : trivy-action, mars 2026),
+# version lisible en commentaire. Le binaire gitleaks est vérifié par son SHA-256.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read  # le jeton du workflow ne peut rien modifier dans le dépôt
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  MLFLOW_DISABLE_TELEMETRY: "true"
+  MLFLOW_DISABLE_AGENT_HINT: "1"
+
+jobs:
+  tests:
+    name: lint et tests (API, features, contrat, modèle, registre)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Dépendances
+        run: pip install -r requirements-dev.txt && pip install -e .
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format
+        run: ruff format --check .
+      - name: pytest
+        # EX-05 (le modèle bat la persistance), reproductibilité, règle de promotion (EX-14), registre (EX-13)
+        run: pytest -p no:cacheprovider
+
+  secrets:
+    name: secrets (gitleaks, tout l'historique)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"  # linux_x64.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # un secret supprimé dans un commit récent reste lisible dans les anciens
+          persist-credentials: false
+      - name: Installer gitleaks (binaire vérifié)
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+      - name: gitleaks (EX-06)
+        run: ./gitleaks git . --redact --verbose --exit-code 1
+
+  data:
+    name: données (dbt build et contrat Pandera sur un bronze simulé)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: velov
+          POSTGRES_PASSWORD: velov  # base jetable du runner, détruite en fin de job
+          POSTGRES_DB: velov
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U velov -d velov" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      POSTGRES_PASSWORD: velov
+      DATABASE_URL: postgresql://velov:velov@localhost:5432/velov
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Dépendances
+        run: pip install -r requirements-pipeline.txt && pip install -e .
+      - name: Ingestion bronze (simulateur, 30 jours)
+        run: python -m velov.ingest --source simulator --days 30 --stations 10
+      - name: dbt build (EX-11, EX-12)
+        working-directory: dbt
+        run: dbt build --profiles-dir .
+      - name: Entraînement sur gold (contrat Pandera vérifié avant)
+        run: python -m velov.train --from-gold --test-days 7 --out /tmp/models
+
+  image:
+    name: image (build, /ready en 200)
+    needs: [tests, secrets]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build (modèle de test entraîné dans l'image ; le vrai vient du registre, sur la VM)
+        run: |
+          docker build --build-arg VERSION=ci --build-arg GIT_COMMIT="${GITHUB_SHA::7}" \
+            -t "velov-api:ci-${GITHUB_SHA::7}" .
+      - name: Démarrer et attendre /ready (EX-02)
+        run: |
+          docker run -d --name api -p 8000:8000 "velov-api:ci-${GITHUB_SHA::7}"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/ready; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "/ready n'a pas répondu 200 en 60 s" >&2
+          docker logs api
+          exit 1
+      - name: Contrat de l'image (non-root, /v1/model)
+        run: |
+          test "$(docker exec api id -u)" != "0"
+          curl -fsS http://127.0.0.1:8000/v1/model
