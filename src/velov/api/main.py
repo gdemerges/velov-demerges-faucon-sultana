@@ -6,7 +6,7 @@ Endpoints attendus (niveaux du TP1 : Must, Should, Stretch) :
     POST /v1/predict        [Must]    une prédiction
     GET  /health            [Should]  liveness : le process répond (ne dépend pas du modèle)
     GET  /ready             [Should]  readiness : 200 si le modèle est chargé, 503 sinon
-    GET  /v1/model, POST /v1/predict/batch   [Stretch]
+    GET  /v1/model          [S4]      quel modèle tourne : version du registre, run, données (EX-13)
 
 Lancement :
     uvicorn velov.api.main:app --reload
@@ -83,6 +83,16 @@ def ready() -> dict:
     if STATE["model"] is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
     return {"status": "ready", "model_version": STATE["metadata"]["model_version"]}
+
+
+@app.get("/v1/model")
+def model_info() -> dict:
+    """Quel modèle tourne (EX-13) : version, réglages, métriques, données, et version du registre si exporté."""
+    if STATE["model"] is None:
+        raise HTTPException(status_code=503, detail="Modèle non chargé")
+    meta = STATE["metadata"]
+    keys = ("model_name", "model_version", "trained_at", "params", "metrics", "data", "registry")
+    return {k: meta.get(k) for k in keys} | {"artifact_sha256": meta["artifact"]["sha256"]}
 
 
 @app.post("/v1/predict", response_model=PredictionResponse)

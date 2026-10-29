@@ -1,4 +1,10 @@
 # syntax=docker/dockerfile:1
+# Origine du modèle embarqué (ADR-0004) :
+#   train  (défaut) : entraîné pendant le build sur des données simulées, pour qu'un clone propre démarre (CI)
+#   export : paquet exporté du registre MLflow, passé en contexte nommé (scripts/release.sh) :
+#            docker build --build-arg MODEL_FROM=export --build-context exported=<dossier> .
+ARG MODEL_FROM=train
+
 # --- Étape 1 : build des dépendances dans un venv ---
 FROM python:3.12-slim AS builder
 
@@ -18,14 +24,22 @@ COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-deps . && /opt/train/bin/pip install --no-deps .
 
-# Modèle entraîné dans l'image (données simulées, seed fixe) : models/ et data/ ne sont pas dans git,
-# un clone propre doit pouvoir construire une image qui répond 200 sur /ready.
-RUN /opt/train/bin/python -m velov.data --out /build/data/velov_history.csv \
-    && /opt/train/bin/python -m velov.train --data /build/data/velov_history.csv --out /build/models
-
 RUN pip uninstall -y pip setuptools wheel 2>/dev/null; \
     find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) -prune -exec rm -rf {} + ; \
     find /opt/venv -name '*.pyi' -delete
+
+# --- Modèle, selon MODEL_FROM : seule l'étape choisie est construite ---
+# Entraîné dans l'image (données simulées, seed fixe) : models/ et data/ ne sont pas dans git,
+# un clone propre doit pouvoir construire une image qui répond 200 sur /ready.
+FROM builder AS model-train
+RUN /opt/train/bin/python -m velov.data --out /build/data/velov_history.csv \
+    && /opt/train/bin/python -m velov.train --data /build/data/velov_history.csv --out /models
+
+# Exporté du registre par velov.export : l'alias champion a été résolu avant le build (ADR-0004).
+FROM scratch AS model-export
+COPY --from=exported model.onnx metadata.json /models/
+
+FROM model-${MODEL_FROM} AS model
 
 # --- Étape 2 : image d'exécution minimale ---
 FROM python:3.12-slim
@@ -44,7 +58,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 # Seuls le graphe ONNX et ses métadonnées : model.joblib (scikit-learn) reste dans l'étape de build.
-COPY --from=builder /build/models/model.onnx /build/models/metadata.json ./models/
+COPY --from=model /models/model.onnx /models/metadata.json ./models/
 
 # Mises à jour de sécurité de la base, puis retrait des outils système inutiles à une API
 # (mount, login, util-linux, ncurses...) : moins de paquets = moins de CVE.
