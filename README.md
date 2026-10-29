@@ -160,7 +160,9 @@ doit battre la persistance, puis le champion d'au moins 2 %. Sans `--apply`, rie
 python -m velov.promote                 # décision seule
 python -m velov.promote --apply         # @champion -> challenger, ancien champion -> @previous-champion, tag promotion
 python -m velov.promote --rollback      # @champion <- @previous-champion
+python -m velov.data --days 140 --out data/velov_history_140d.csv              # 50 jours de plus
 python -m velov.retrain --data data/velov_history_140d.csv --version 0.3.0   # réentraînement + décision
+python -m velov.promote --data data/velov_history_140d.csv --apply           # même table, même fenêtre
 ```
 
 Sorties réelles sur la stack locale : v1 (seed 42) promue, « premier champion » ; v2 (seed 7) refusée,
@@ -214,7 +216,7 @@ seuls `compose.mlflow.yaml` et `docker/` ont été récupérés.
 
 IA déclarée : Claude Code (Opus 5.5) a écrit `tracking.py`, `promote.py`, `export.py`, `retrain.py`, les tests de
 modèle et de registre, le workflow et `release.sh` à partir de l'énoncé et du cours S4. Vérifié par : pytest
-(33 tests), ruff, build et démarrage de l'image, et la séquence complète (runs, promotion, livraison, retour
+(39 tests), ruff, build et démarrage de l'image, et la séquence complète (runs, promotion, livraison, retour
 arrière, redémarrage de la stack) sur une stack MLflow locale.
 
 ## Exigences du projet

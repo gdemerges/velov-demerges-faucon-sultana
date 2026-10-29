@@ -34,7 +34,7 @@ Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.
 1. Vérifier la décision : `python -m velov.promote --from-gold` (challenger, champion et persistance sur la
    même fenêtre). Si elle dit PROMOUVOIR et qu'on est d'accord : `python -m velov.promote --from-gold --apply`
    (l'ancien champion prend l'alias `previous-champion`, la raison est taguée sur la version).
-2. Livrer : `git pull origin tp4 && ./scripts/release.sh` (export de `@champion`, image
+2. Livrer : `git pull origin main && ./scripts/release.sh` (export de `@champion`, image
    `velov-api:m<version>-<commit>`, redémarrage de l'API, attend le healthcheck).
 3. Contrôler : `curl -s localhost:8000/v1/model` -> `registry.version` est la nouvelle version.
 4. Retour arrière (rollback) :
