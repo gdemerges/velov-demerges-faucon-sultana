@@ -23,6 +23,9 @@ qui dit oui ou non.
 | EX-13 | Le modèle servi est retrouvable jusqu'à son code et ses données | `GET /v1/model` donne la version du registre et le run ; le run porte commit, `git_dirty`, empreinte et période des données, paramètres, métriques (`tests/test_registry.py`) | S4 |
 | EX-14 | Un modèle n'est promu que s'il bat le champion et la persistance sur la même fenêtre | Sortie de `velov.promote`, tag `promotion` sur la version, alias `previous-champion` ; règle testée (`tests/test_model_quality.py`) | S4 |
 | EX-15 | Rien n'arrive sur main sans CI au vert | Workflow `ci` (lint, tests, secrets, données, image) ; protection de branche sur main exigeant ces jobs | S4 |
+| EX-16 | L'API a un SLO de latence écrit, vérifié par un test de charge | SLO et capacité mesurée dans le runbook ; tableau des paliers Locust et courbe de saturation dans le README, avec machine et protocole | S5 |
+| EX-17 | Une optimisation du modèle n'est servie qu'avec son triplet mesuré | Écart de prédiction ou précision, taille et latence avant et après, dans un ADR | S5 |
+| EX-18 | Le remplacement du modèle suit une stratégie et des critères de retour arrière écrits d'avance | Section du runbook : stratégie, signaux, seuils, commande de retour arrière | S5 |
 
 EX-05 et EX-06 sont vérifiées par la CI à chaque push depuis S4 (`test_model_beats_persistence_baseline`, job `secrets`).
 
@@ -31,6 +34,8 @@ EX-05 et EX-06 sont vérifiées par la CI à chaque push depuis S4 (`test_model_
 - **Horodatage** : les instants sont échangés et stockés en UTC, avec fuseau explicite (ISO 8601).
   Les features calendaires sont calculées en heure locale (Europe/Paris).
 - **Versions** : une image est identifiée par la version du modèle et le SHA court du commit, jamais par `latest`.
+- **Mesures de performance** : un chiffre de latence ou de débit ne compte pour EX-16 et EX-17 qu'avec son protocole
+  (machine, cœurs, versions, commit, paliers, durée, échauffement). Le test de charge part d'une autre machine que l'API.
 
 ## Suivi
 

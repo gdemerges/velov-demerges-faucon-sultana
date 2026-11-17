@@ -30,10 +30,15 @@ def init_db(url: str) -> None:
         conn.execute(SCHEMA)
 
 
-def save_prediction(url: str, station_id: int, target_timestamp, predicted_bikes: float, model_version: str) -> None:
-    with psycopg.connect(url, connect_timeout=5) as conn:
-        conn.execute(
+def save_predictions(url: str, responses) -> None:
+    """Une ligne par prédiction (réponses de l'API : station_id, target_timestamp, predicted_bikes, model_version).
+
+    Une connexion par appel, sans pool : c'est ce que le TP5 mesure (README, section Performance).
+    """
+    rows = [(r.station_id, r.target_timestamp, r.predicted_bikes, r.model_version) for r in responses]
+    with psycopg.connect(url, connect_timeout=5) as conn, conn.cursor() as cur:
+        cur.executemany(
             "INSERT INTO predictions (station_id, target_timestamp, predicted_bikes, model_version)"
             " VALUES (%s, %s, %s, %s)",
-            (station_id, target_timestamp, predicted_bikes, model_version),
+            rows,
         )

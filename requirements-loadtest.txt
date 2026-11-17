@@ -1,0 +1,2 @@
+# Test de charge (S5). S'installe sur le POSTE qui génère la charge, pas sur la VM ni dans l'image.
+locust==2.47.0
