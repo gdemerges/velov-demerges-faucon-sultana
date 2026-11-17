@@ -1,0 +1,9 @@
+# TP5, étape 4 : même image, deux workers uvicorn (un process et un modèle chacun). Une seule chose change.
+#   docker compose -f compose.yaml -f compose.workers.yaml up -d api
+#   docker update --cpus 2 $(docker compose ps -q api)
+#   ./loadtest/paliers.sh http://localhost:8000 w2
+services:
+  api:
+    command: ["uvicorn", "velov.api.main:app",
+              "--host", "0.0.0.0", "--port", "8000",
+              "--workers", "2"]

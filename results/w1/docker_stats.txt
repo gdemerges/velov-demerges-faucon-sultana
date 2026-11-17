@@ -1,0 +1,20 @@
+== t=450s 15:16:17
+velov-demerges-faucon-sultana-api-1 98.99% 99.8MiB / 7.57GiB
+velov-demerges-faucon-sultana-db-1 1.67% 40.34MiB / 7.57GiB
+retailpulse-batch-airflow-webserver-1 0.07% 750.1MiB / 7.57GiB
+retailpulse-batch-airflow-scheduler-1 3.06% 702.1MiB / 7.57GiB
+retailpulse-batch-postgres-1 1.32% 67.31MiB / 7.57GiB
+
+18660 0,015625
+
+
+== t=570s 15:18:20
+velov-demerges-faucon-sultana-api-1 98.70% 113MiB / 7.57GiB
+velov-demerges-faucon-sultana-db-1 6.52% 55.3MiB / 7.57GiB
+retailpulse-batch-airflow-webserver-1 0.05% 750.3MiB / 7.57GiB
+retailpulse-batch-airflow-scheduler-1 8.94% 702.5MiB / 7.57GiB
+retailpulse-batch-postgres-1 5.69% 68.11MiB / 7.57GiB
+
+28488   0
+
+

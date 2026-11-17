@@ -26,7 +26,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import numpy as np
-import onnxruntime as ort
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 
@@ -37,7 +36,7 @@ from velov.api.schemas import (
     PredictionRequest,
     PredictionResponse,
 )
-from velov.artifact import METADATA_FILENAME, onnx_feeds, sha256_of
+from velov.artifact import METADATA_FILENAME, onnx_feeds, onnx_session, sha256_of
 from velov.features import FEATURES, add_features
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -56,7 +55,7 @@ def load_model(model_dir: Path) -> tuple[object, dict]:
     if sha256_of(model_path) != metadata["artifact"]["sha256"]:
         raise RuntimeError(f"Empreinte invalide pour {model_path}")
     # ONNX : un graphe de calcul, aucun code exécuté au chargement (contrairement à pickle / joblib).
-    return ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"]), metadata
+    return onnx_session(model_path, int(os.getenv("ORT_INTRA_OP_THREADS", "1"))), metadata
 
 
 @asynccontextmanager

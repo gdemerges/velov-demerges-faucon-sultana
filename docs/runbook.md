@@ -1,33 +1,46 @@
 # Runbook : API velov-availability
 
-> Template à compléter au fil des sessions. Public cible : une personne d'astreinte
-> qui ne connaît pas le projet et doit rétablir le service à 3 h du matin.
+> Public cible : une personne d'astreinte qui ne connaît pas le projet et doit rétablir le service à 3 h du matin.
+> Toutes les commandes se lancent depuis le dossier du dépôt (sur la VM : `~/velov-mlops`).
 
 ## 1. Vue d'ensemble
-- Ce que fait le service, en deux phrases :
-- Schéma d'architecture (lien) :
-- Dépendances (base de données, stockage du modèle...) :
+- Ce que fait le service : pour une station Vélo'v et un instant donné, l'API prédit le nombre de vélos
+  disponibles une heure plus tard (`POST /v1/predict`, ou `/v1/predict/batch` jusqu'à 1000 lignes).
+  Chaque prédiction porte la version du modèle et est journalisée en base.
+- Schéma d'architecture : README, sections Docker, Pipeline (TP3) et TP4.
+- Dépendances : PostgreSQL (`db`, journal `predictions`, tables bronze/silver/gold, registre MLflow) ;
+  le modèle est **dans l'image** (`/app/models/model.onnx` + `metadata.json`, empreinte vérifiée au démarrage).
+  Sans base, l'API prédit quand même (journalisation désactivée, erreur dans les logs).
+- SLO : 95 % des `/v1/predict` sous 200 ms, moins de 1 % d'erreurs (section 8).
 
 ## 2. Démarrer / arrêter
 ```bash
-# démarrer
-# arrêter
-# redémarrer un seul service
+cp .env.example .env                      # une seule fois ; POSTGRES_PASSWORD à changer, jamais dans git
+docker compose up -d --build --wait       # démarrer API + base (attend les healthchecks)
+docker compose stop                       # arrêter sans rien perdre (le volume pgdata reste)
+docker compose restart api                # redémarrer un seul service
+docker compose logs --tail 100 -f api     # suivre les logs
 ```
+Ne jamais lancer `docker compose down -v` sur la VM : `-v` supprime le volume de la base (journal, registre).
 
 ## 3. Vérifier que tout va bien
 | Vérification | Commande | Résultat attendu |
 |---|---|---|
 | Le process répond | `curl -s http://<hôte>:8000/health` | `{"status":"ok"}` |
 | Le modèle est chargé | `curl -s http://<hôte>:8000/ready` | HTTP 200 + version |
-| | | |
+| Quel modèle tourne | `curl -s http://<hôte>:8000/v1/model` | version, `registry.version`, métriques, données |
+| Conteneurs sains | `docker compose ps` | `api` et `db` `Up (healthy)` |
+| Une prédiction est journalisée | `docker compose exec db psql -U velov -d velov -c "select * from predictions order by id desc limit 3"` | lignes récentes, `created_at` en UTC |
+| Temps passé dans l'API | `curl -s -D - -o /dev/null http://<hôte>:8000/ready \| grep -i x-process-time` | quelques ms |
 
 ## 4. Incidents connus
 | Symptôme | Cause probable | Diagnostic | Action |
 |---|---|---|---|
-| `/ready` renvoie 503 | | | |
-| Le conteneur redémarre en boucle | | | |
-| Latence élevée | | | |
+| `/ready` renvoie 503 | modèle absent ou empreinte SHA-256 invalide (artefact modifié) | `docker compose logs api \| grep -i "chargement du modèle"` | reconstruire l'image (`docker compose up -d --build api`) ou revenir à l'image précédente (section 5) |
+| Le conteneur redémarre en boucle | `.env` absent (`POSTGRES_PASSWORD` requis), port 8000 déjà pris | `docker compose ps -a`, `docker compose logs api` | créer `.env` ; `API_PORT=8001 docker compose up -d` |
+| Prédictions non journalisées | base indisponible ou `DATABASE_URL` erronée | `docker compose logs api \| grep -i "base de données"` ; `docker compose ps db` | `docker compose up -d db`, puis `docker compose restart api` |
+| Latence élevée | file d'attente (débit proche de la capacité) ou CPU bridé | section 8 : comparer `X-Process-Time-Ms` à la latence client ; `docker stats --no-stream` | section 8, « près du plafond » |
+| `422` en masse côté client | client hors contrat (timestamp sans fuseau, champ inconnu, vélos > capacité) | corps de la réponse (`detail`) | corriger le client : ce n'est pas une panne de l'API (EX-01) |
 
 ## 5. Déployer une nouvelle version du modèle
 Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.0.1:5000`) :
@@ -54,7 +67,8 @@ Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.
 `mlartifacts`) : ne jamais l'utiliser sur la VM.
 
 ## 6. Contacts et escalade
--
+- Binôme Demerges / Faucon / Sultana (dépôt `gdemerges/velov-demerges-faucon-sultana`), canal Teams du cours.
+- VM, réseau de l'école, accès Proxmox : l'enseignant (Mohamed Gassem).
 
 ## 7. Pipeline de données (S3)
 
