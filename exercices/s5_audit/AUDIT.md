@@ -5,7 +5,7 @@ Locust pour mon API FastAPI de prédiction (POST /v1/predict, GET /health) et di
 
 ## 1-2. Le verdict du script, comparé à la capacité mesurée
 
-__RUN__
+Pas encore lancé (manque de temps). Capacité mesurée à l'étape 2 : ~42 req/s sous le SLO, 74 req/s au plafond.
 
 ## 3. Les six défauts
 
@@ -38,4 +38,4 @@ sert l'API, règle 1 du protocole), une durée de 20 s sans échauffement (docst
 
 ## Ce qu'en dit un assistant quand on lui demande de relire son propre script
 
-__ASSISTANT__
+À faire en binôme.

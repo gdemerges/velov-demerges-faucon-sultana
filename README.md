@@ -219,6 +219,151 @@ modèle et de registre, le workflow et `release.sh` à partir de l'énoncé et d
 (39 tests), ruff, build et démarrage de l'image, et la séquence complète (runs, promotion, livraison, retour
 arrière, redémarrage de la stack) sur une stack MLflow locale.
 
+## Performance (TP5) : mesurer, trouver le goulot, optimiser
+
+SLO (EX-16) : **95 % des `POST /v1/predict` sous 200 ms, moins de 1 % d'erreurs.** Exploitation : [runbook, section 8](docs/runbook.md).
+
+### Protocole
+
+**Mesure locale** (VM indisponible) : l'API et Locust sur le même poste ; l'API bornée à **un cœur**
+(`docker update --cpus 1`), Locust sur les 19 autres.
+
+| Élément | Valeur |
+|---|---|
+| Poste | Windows 11 Pro, 20 cœurs logiques, 7,6 Go pour Docker Desktop 29.8.2 (WSL2), sur secteur |
+| API | image `velov-api:tp5-<commit>` (Python 3.12, uvicorn 0.46, onnxruntime 1.31), modèle 0.1.0 entraîné dans le build, PostgreSQL 16 du compose actif (journalisation mesurée avec) |
+| Charge | Locust 2.47.0 (`loadtest/locustfile.py` du cours : 10 prédictions pour 1 `/health`, payloads tirés au hasard, 0,5 à 1,5 s de réflexion) |
+| Paliers | `loadtest/paliers.sh` : échauffement 1 min non compté, puis 10, 25, 50, 100, 150 usagers, 2 min chacun |
+| Commits | `w1` : 7d761c9 · `w1fix` et `w2` : 88cc302 (horodatages dans `results/<config>/protocole.txt`) |
+| Arrêté pendant les mesures | MLflow, IDE et navigateur lourds ; restaient les conteneurs d'un autre projet (Airflow, 1 à 9 % d'un cœur au total, `docker_stats.txt`) |
+| Lecture | `python loadtest/summary.py results/<config> --markdown` (ligne `/v1/predict` seule) ; courbe : `python scripts/plot_paliers.py results/w1 results/w1fix results/w2` |
+
+Tous les fichiers bruts sont dans [`results/`](results/) (CSV Locust, `docker stats` aux paliers 100 et 150, compteurs
+cgroup `cpu.stat`) ; ils serviront au TP6 pour comparer ces p95 à ceux de Prometheus.
+
+### Courbe de saturation
+
+![Débit et p95 selon les usagers](docs/perf/saturation.png)
+
+**`w1` : 1 worker, 1 cœur, tel que livré au TP4** (commit 7d761c9)
+
+| usagers | requêtes | erreurs % | débit req/s | p50 ms | p95 ms | p99 ms | SLO p95 |
+|---|---|---|---|---|---|---|---|
+| 10 | 651 | 0.0 | 5.5 | 700 | 1400 | 1700 | KO |
+| 25 | 774 | 0.0 | 6.5 | 2600 | 3700 | 4600 | KO |
+| 50 | 838 | 0.0 | 7.1 | 5500 | 7200 | 8000 | KO |
+| 100 | 791 | 0.0 | 6.7 | 12000 | 17000 | 19000 | KO |
+| 150 | 771 | 0.0 | 6.5 | 20000 | 24000 | 26000 | KO |
+
+**Aucun palier ne tient le SLO** : 5,5 req/s et p95 de 1,4 s dès 10 usagers, débit plafonné à ~7 req/s, l'API à
+99 % de son cœur. La latence monte avec les usagers et le débit ne bouge plus : l'API est saturée dès le départ.
+
+### Le goulot, et la mesure qui le prouve
+
+**Goulot : onnxruntime lançait 20 threads de calcul dans un conteneur limité à un cœur.** Dans le conteneur,
+`os.cpu_count()` vaut 20 (les cœurs de l'hôte) ; ORT crée un thread par cœur, qui attend en boucle active. Le quota
+d'un cœur est consommé en attente et le noyau bride tout le process, y compris le code pandas.
+
+| Preuve | Avant (ORT par défaut) | Après (ORT 1 thread) |
+|---|---|---|
+| Compteurs cgroup `nr_throttled / nr_periods` pendant les paliers | **7 475 / 7 676 (97 %)** | 1 967 / 8 045 (24 %, et seulement aux paliers saturés) |
+| `_predict()` dans le conteneur borné, p50 / p95 (`bench_predict.py --ort-threads 0 1`) | 7,7 ms / **105,5 ms** | 3,3 ms / **3,9 ms** |
+| `add_features` seul (pandas, sans ORT), p95 | 94 ms | 1,6 ms |
+
+**Temps par étape** de `_predict()`, ORT sur 1 thread, dans le conteneur borné à un cœur, 500 appels après
+50 d'échauffement, `time.perf_counter` (`results/bench_predict_batch.md`) :
+
+| Lot | 1. DataFrame | 2. add_features | 3. modèle | 4. réponses | total p50 | total p95 | par ligne |
+|---|---|---|---|---|---|---|---|
+| 1 ligne | 0,27 ms | 1,39 ms | 1,71 ms | 0,06 ms | 3,44 ms | 3,86 ms | 3 440 µs |
+| 100 lignes | 0,46 ms | 1,50 ms | 2,01 ms | 0,22 ms | 4,20 ms | 4,86 ms | 42 µs |
+| 1 000 lignes | 2,00 ms | 2,51 ms | 5,05 ms | 1,78 ms | 11,34 ms | 14,82 ms | 11 µs |
+
+Prédire 1 ligne coûte presque autant que 100 : le coût est **fixe** (construire un DataFrame, appeler pandas, passer
+la frontière Python / C++ d'ORT), pas proportionnel aux lignes. D'où l'intérêt de `/v1/predict/batch` et d'un
+batching dynamique (extensions).
+
+**Où part le reste du temps.** À 10 usagers (pas de file d'attente) : `_predict()` 3,4 ms ; `X-Process-Time-Ms`
+(tout le temps passé dans l'API) **15 à 20 ms** ; curl depuis le poste ~20 ms ; Locust p50 **59 ms**.
+- Entre `_predict` et `X-Process-Time-Ms` : la **journalisation**, une connexion PostgreSQL ouverte par requête.
+  `bench_predict.py --database-url` : 21,7 ms au p50, **75 % du temps** d'une prédiction (`results/bench_journalisation.md`,
+  mesuré depuis le poste à travers le port Docker, un peu plus cher que dans le réseau du compose).
+- Entre curl et Locust (~40 ms) : côté client. Locust (gevent) sur Windows, sur le même poste ; à refaire depuis
+  une autre machine quand la VM revient. La latence Locust est donc pessimiste.
+- Au palier saturé, l'écart entre Locust et `X-Process-Time-Ms` grandit : c'est l'attente dans la file.
+
+**Une seule modification : ORT sur 1 thread** (`velov.artifact.onnx_session`, `ORT_INTRA_OP_THREADS`, défaut 1 ;
+une requête porte une ligne, il n'y a rien à paralléliser dedans). Mêmes paliers, même cœur :
+
+**`w1fix` : 1 worker, 1 cœur, ORT 1 thread** (commit 88cc302)
+
+| usagers | requêtes | erreurs % | débit req/s | p50 ms | p95 ms | p99 ms | SLO p95 |
+|---|---|---|---|---|---|---|---|
+| 10 | 1015 | 0.0 | 8.6 | 59 | 66 | 85 | ok |
+| 25 | 2516 | 0.0 | 21.2 | 60 | 71 | 88 | ok |
+| 50 | 5016 | 0.0 | 42.3 | 62 | 84 | 120 | ok |
+| 100 | 8858 | 0.0 | 74.2 | 170 | 610 | 920 | KO |
+| 150 | 8880 | 0.0 | 74.2 | 900 | 1400 | 1500 | KO |
+
+**Capacité sous le SLO : ~42 req/s (50 usagers) ; plafond 74 req/s**, coude entre 50 et 100 usagers.
+
+Palier du coude refait (`results/w1fix_bis`, 100 usagers) : 71,5 req/s et p95 720 ms contre 74,2 req/s et 610 ms, soit 4 % d'écart sur le débit : sous les 20 %, la mesure est reproductible.
+
+### Étape 4 : un worker et un cœur de plus, le débit double-t-il ?
+
+Seul changement par rapport à `w1fix` : `compose.workers.yaml` (`--workers 2`) et `docker update --cpus 2`.
+
+| usagers | requêtes | erreurs % | débit req/s | p50 ms | p95 ms | p99 ms | SLO p95 |
+|---|---|---|---|---|---|---|---|
+| 10 | 950 | 0.0 | 8.7 | 59 | 65 | 70 | ok |
+| 25 | 2349 | 0.0 | 21.0 | 59 | 68 | 100 | ok |
+
+**Mesure interrompue après le palier 25 (manque de temps) : non concluante.** Aux paliers 10 et 25, le débit est le même qu'avec un worker (8,7 et 21 req/s) : il est fixé par les usagers (loi de Little, ~1 req/s par usager), pas par l'API. La question « le débit double-t-il ? » se tranche aux paliers 100 et 150, à relancer : `./loadtest/paliers.sh http://localhost:8000 w2`. Attendu : plafond vers 2 × 74 req/s si le CPU de l'API reste le goulot, moins si la base (35 % d'un cœur à 74 req/s) ou Locust saturent ; chaque worker charge son modèle (~100 Mo par process).
+
+### Comparaison des configurations
+
+| Config | Capacité sous le SLO | Plafond | p95 à 50 usagers |
+|---|---|---|---|
+| w1 (ORT 20 threads) | 0 req/s | ~7 req/s | 7 200 ms |
+| w1fix (ORT 1 thread) | ~42 req/s | 74 req/s | 84 ms |
+| w2 (2 workers) | à mesurer (paliers 100-150 non faits) | — | — |
+
+Conclusion chiffrée : une modification d'une ligne (threads ORT) multiplie le plafond par 10 (7 -> 74 req/s) et ramène le p95 à 50 usagers de 7,2 s à 84 ms.
+
+## Optimiser le modèle (TP5, Should et Stretch)
+
+### TP5a : DistilBERT en float32 contre int8
+
+**Non fait** (manque de temps) : le script est prêt, `scripts/bench_quantization.py` (float32, int8 torch.ao, int8 torchao ; taille, p50/p95 sur 1 thread, précision SST-2 et accord avec float32). À lancer à la maison selon l'énoncé.
+
+### Moteur d'inférence : ONNX contre scikit-learn (Stretch, EX-17)
+
+Le modèle Vélo'v est servi en ONNX depuis le TP2 ([ADR-0003](docs/adr/0003-serving-onnx.md)). L'export est maintenant
+vérifié sur **tout l'historique** (et plus seulement sur le test) : refusé au-delà de 0,001 vélo d'écart. Triplet
+mesuré dans l'ADR-0003 (section « Triplet mesuré »).
+
+### Audit d'un test de charge écrit par une IA
+
+Analyse des six défauts (ligne, effet sur le verdict, correction) et demande réécrite : [exercices/s5_audit/AUDIT.md](exercices/s5_audit/AUDIT.md). Le script n'a pas encore été lancé contre l'API (étapes 1-2 de l'audit) ; attendu : 100 % de 422 comptés comme succès (timestamp sans fuseau), d'où un « SLO respecté » sans aucune prédiction.
+
+### Ce qu'on ferait ensuite (extensions, protocole de l'étape 2)
+
+- **Journalisation** : 75 % du temps d'une prédiction. Pool de connexions (psycopg_pool) ou `BackgroundTasks`, puis
+  paliers avec et sans `DATABASE_URL`.
+- **Batching dynamique** : 1 ligne coûte presque autant que 100 ; regrouper les requêtes unitaires (asyncio.Queue).
+- **Charge en boucle ouverte** (k6 `constant-arrival-rate` au débit du coude) : Locust est en boucle fermée et
+  sous-estime la latence d'un vrai trafic.
+
+IA déclarée (TP5) : Claude Code (Opus 5.5) a écrit `scripts/bench_predict.py`, `scripts/bench_quantization.py`,
+`scripts/plot_paliers.py`, `compose.workers.yaml`, `onnx_session`, le middleware `X-Process-Time-Ms`, la route batch
+et leurs tests, a lancé les paliers et rédigé cette section, le runbook et l'audit. Vérifié par : pytest (42 tests),
+ruff, la somme des étapes du banc comparée à `_predict()` appelé tel quel, les compteurs cgroup avant et après, la
+répétition du palier du coude. Corrigé en cours de route : les paliers relancés sans `MSYS_NO_PATHCONV` (Git Bash
+réécrivait les chemins passés à Locust), et la première capture des compteurs cgroup (chemin réécrit de la même façon).
+L'audit du locustfile IA (six défauts) a été rédigé par l'assistant, pas « sans assistant » comme le demande l'énoncé :
+à refaire en binôme avant l'oral.
+
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.

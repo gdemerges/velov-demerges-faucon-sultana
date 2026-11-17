@@ -100,3 +100,50 @@ Vérifier ensuite l'idempotence : `./scripts/check_idempotence.sh`.
 | `Contract Error` sur gold | colonne ou type différent du contrat | comparer `dbt/models/gold/gold.yml` et `src/velov/contract.py` |
 | `SKIP relation gold...` | un test silver est en échec en amont | gold garde sa dernière version valide ; traiter l'échec silver |
 | `train --from-gold` : `SchemaErrors` | table gold hors contrat | l'entraînement s'arrête volontairement (EX-12) ; lire le détail des violations |
+
+## 8. Performance et capacité (EX-16)
+
+- **SLO** : 95 % des `POST /v1/predict` sous **200 ms**, moins de **1 %** d'erreurs.
+- **Capacité mesurée** (1 worker, 1 cœur, ORT 1 thread, mesure locale, README section Performance) :
+  **~42 req/s sous le SLO**, plafond **74 req/s** ; au-delà la latence explose (p95 610 ms à 100 usagers).
+- **Près du plafond** (débit > 35 req/s par worker, ou p95 qui monte) :
+  1. comparer `X-Process-Time-Ms` (temps dans l'API) à la latence vue par le client : s'ils sont proches, l'API calcule
+     lentement (CPU, `docker stats`) ; si l'écart grandit, les requêtes attendent leur tour (file) ;
+  2. vérifier que le conteneur n'est pas bridé : `docker exec <api> cat /sys/fs/cgroup/cpu.stat` (`nr_throttled`) ;
+     `ORT_INTRA_OP_THREADS` doit valoir 1 ;
+  3. ajouter un worker et un cœur (`compose.workers.yaml`, `docker update --cpus 2`) en surveillant la mémoire
+     (~100 Mo par worker) ;
+  4. la journalisation (75 % du temps d'une prédiction) est le prochain goulot : pool de connexions.
+
+## 9. Remplacer le modèle : stratégie et retour arrière (EX-18)
+
+Une seule VM, un seul conteneur API, pas de répartiteur de charge : un **canary** (x % du trafic vers le
+nouveau modèle) demanderait un proxy qu'on n'a pas. On fait donc **shadow, puis bascule**, avec retour arrière
+par l'image précédente.
+
+| Phase | Ce qui tourne | Durée | On passe à la suite si |
+|---|---|---|---|
+| 0. Hors ligne | `velov.promote` : challenger, champion et persistance sur la même fenêtre (EX-14) | — | décision PROMOUVOIR |
+| 1. Shadow | le challenger est livré dans une 2e image (`API_IMAGE=velov-api:m<v>-<commit>`, `API_PORT=8001`) ; un rejeu des requêtes de la veille (table `predictions`) lui est envoyé, ses réponses ne servent à personne | 24 h | MAE à H+1 du challenger <= MAE du champion sur les mêmes requêtes, 0 erreur 5xx, p95 sous le SLO (paliers de la section 8 sur le port 8001) |
+| 2. Bascule | `./scripts/release.sh` (section 5) : le challenger devient l'API | — | `/v1/model` donne la nouvelle version |
+| 3. Surveillance | le nouveau modèle sert seul ; l'ancienne image reste sur la VM (`docker image ls velov-api`) | 48 h | aucun seuil franchi |
+
+**Signaux et seuils de retour arrière** (pendant la phase 3, on revient en arrière dès qu'un seuil est franchi, sans débat) :
+
+| Signal | Où le lire | Seuil |
+|---|---|---|
+| `/ready` en 503 ou conteneur qui redémarre | `docker compose ps`, `curl /ready` | dès la première occurrence |
+| Erreurs 5xx sur `/v1/predict` | `docker compose logs api` | > 1 % sur 15 min |
+| Latence p95 | paliers de la section 8 (et Prometheus à partir de S6) | > 200 ms sous la charge habituelle |
+| Erreur du modèle | MAE à H+1 : `predictions` jointes à `bronze.station_status` une heure après | > MAE du champion précédent + 10 % sur 24 h |
+| Prédictions aberrantes | `select model_version, avg(predicted_bikes), count(*) from predictions group by 1` | moyenne qui s'écarte de plus de 30 % de la veille |
+
+**Commande de retour arrière** (moins d'une minute, sans build ni registre) :
+```bash
+docker image ls velov-api                                               # l'image d'avant : m<ancienne version>-<commit>
+API_IMAGE=velov-api:m<ancienne version>-<commit> docker compose up -d --no-build --wait api
+curl -s localhost:8000/v1/model                                         # registry.version = l'ancienne version
+python -m velov.promote --rollback                                      # puis remettre le registre d'accord (@champion)
+```
+Noter dans le registre la raison du retour arrière (tag `rollback` sur la version) et ouvrir un ticket :
+un modèle retiré ne revient qu'avec une nouvelle décision `velov.promote`.
