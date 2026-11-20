@@ -175,6 +175,13 @@ def data_fingerprint(df: pd.DataFrame) -> str:
     return hashlib.sha256(pd.util.hash_pandas_object(rows, index=False).to_numpy().tobytes()).hexdigest()
 
 
+def load_table(path: Path) -> pd.DataFrame:
+    """Table brute (RAW_COLUMNS) lue depuis le CSV du simulateur ; utilisée par velov.replay et velov.monitor."""
+    if not path.exists():
+        raise FileNotFoundError(f"{path} introuvable : lancer d'abord `python -m velov.data`")
+    return pd.read_csv(path, parse_dates=["timestamp"])
+
+
 def load_frame(data_path: Path | None, gold_url: str | None) -> tuple[pd.DataFrame, dict]:
     """Table d'entraînement et description des données (source, empreinte, période UTC).
 

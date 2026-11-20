@@ -1,5 +1,6 @@
 # Dépendances de développement et d'entraînement (jamais dans l'image de serving).
 -r requirements-pipeline.txt
+-r requirements-monitoring.txt
 pytest==9.1.1
 httpx==0.28.1
 httpx2==2.13.1
