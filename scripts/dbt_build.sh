@@ -7,6 +7,7 @@
 # - flock : si un build dure encore, le suivant est sauté plutôt que lancé en parallèle ;
 # - une ligne par passage dans logs/dbt_build.log (OK ou ÉCHEC), le détail du dernier build dans dbt/logs/.
 # Un échec ne casse rien : gold garde sa dernière version valide (tests bloquants), et la ligne ÉCHEC reste.
+# Le résultat est poussé dans le Pushgateway : Prometheus alerte (DbtBuildEnEchec, DbtBuildAbsent) vers Discord.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p logs
@@ -29,4 +30,9 @@ else
 fi
 summary=$(grep -Eo "PASS=[0-9]+ WARN=[0-9]+ ERROR=[0-9]+ SKIP=[0-9]+" logs/dbt_build.last.txt | tail -1)
 echo "$(date -u +%FT%TZ) $status en $(( $(date +%s) - start )) s ${summary}" >>"$LOG"
-[ "$status" = OK ]
+ok=0; [ "$status" = OK ] && ok=1
+printf 'velov_dbt_build_success %s\nvelov_dbt_build_duration_seconds %s\nvelov_dbt_build_last_run_timestamp_seconds %s\n' \
+    "$ok" "$(( $(date +%s) - start ))" "$(date +%s)" \
+    | curl -fsS --max-time 10 --data-binary @- http://127.0.0.1:9091/metrics/job/velov_dbt >/dev/null 2>&1 \
+    || echo "$(date -u +%FT%TZ) AVERTISSEMENT Pushgateway injoignable : Prometheus ne voit pas ce passage" >>"$LOG"
+[ "$ok" = 1 ]
