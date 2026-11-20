@@ -35,4 +35,7 @@ docker build \
 API_IMAGE="$IMAGE" docker compose up -d --no-build --wait api
 
 echo "Livré : $IMAGE (@$ALIAS)"
-curl -fsS "http://127.0.0.1:${API_PORT:-8000}/v1/model" | "$PY" -m json.tool | sed -n '/"registry"/,/}/p'
+# Lu depuis le conteneur : derrière le proxy (S6), le port 8000 n'est plus publié sur la VM.
+docker compose exec -T api python -c \
+    "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/v1/model').read().decode())" \
+    | "$PY" -m json.tool | sed -n '/"registry"/,/}/p'
