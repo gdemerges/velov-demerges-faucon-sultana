@@ -47,6 +47,14 @@ Mesurée par `velov.promote` sur la fenêtre la plus récente (2026-10-04 21:00 
   `temperature` (-30 à 50 °C), `is_raining` ; champ inconnu refusé (422)
 - Sortie : `predicted_bikes` en vélos, bornée à [0, capacity], `target_timestamp` en UTC, `model_version`
 - Nouvelle station : pas d'erreur, la station est ignorée par l'encodage one-hot
+- Features calendaires (depuis `model_version` 0.2.0) : `is_public_holiday` (11 jours fériés de métropole,
+  calculés) et `is_school_holiday` (vacances scolaires de Lyon, zone A, table officielle de
+  data.education.gouv.fr recopiée dans `velov/calendrier.py`). Elles sont déduites du `timestamp`, en date
+  locale : le contrat d'entrée ne change pas. La table couvre jusqu'à la rentrée 2027 ; au-delà,
+  `is_school_holiday` vaut 0 avec un avertissement dans les logs, et un test échoue six mois avant l'échéance.
+  Effet mesuré sur le simulateur : aucun (MAE 1,352 contre 1,347 sans, moyenne de 3 seeds, dans le bruit), car
+  le simulateur ne modélise ni fériés ni vacances et toute la fenêtre de test tombe pendant les vacances d'été.
+  L'effet se mesurera sur la table gold réelle (rentrée de septembre, Toussaint, Noël).
 
 ## 6. Risques et limites
 - Dérive attendue : saison (température), travaux, nouvelles stations ; mesurée en S6 (section 8)

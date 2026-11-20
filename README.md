@@ -445,6 +445,7 @@ Chaque rendu indique celles qu'il couvre et comment le vérifier.
 src/velov/
   data.py          simulateur de données (remplacé par l'open data en S3, même schéma)
   features.py      features partagées entraînement / API (anti training-serving skew)
+  calendrier.py    jours fériés (calculés) et vacances scolaires de Lyon, zone A (table officielle)
   ingest.py        ingestion bronze idempotente (simulateur ou open data Lyon)
   contract.py      contrat Pandera de la table gold
   train.py         entraînement (CSV ou table gold), baseline, artefact + metadata.json
