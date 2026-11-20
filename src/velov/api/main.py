@@ -4,9 +4,12 @@ TP1, partie 3 : exposez le modèle. Mode : IA déclarée autorisée pour cette p
 
 Endpoints attendus (niveaux du TP1 : Must, Should, Stretch) :
     POST /v1/predict        [Must]    une prédiction
+    POST /v1/predict/batch  [Stretch] jusqu'à 1000 prédictions en un appel
     GET  /health            [Should]  liveness : le process répond (ne dépend pas du modèle)
     GET  /ready             [Should]  readiness : 200 si le modèle est chargé, 503 sinon
     GET  /v1/model          [S4]      quel modèle tourne : version du registre, run, données (EX-13)
+
+Chaque réponse porte l'en-tête X-Process-Time-Ms : le temps passé DANS l'API (S1, mesuré au TP5).
 
 Lancement :
     uvicorn velov.api.main:app --reload
@@ -17,17 +20,23 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
-import onnxruntime as ort
+import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 
 from velov import db
-from velov.api.schemas import PredictionRequest, PredictionResponse
-from velov.artifact import METADATA_FILENAME, onnx_feeds, sha256_of
+from velov.api.schemas import (
+    BatchPredictionRequest,
+    BatchPredictionResponse,
+    PredictionRequest,
+    PredictionResponse,
+)
+from velov.artifact import METADATA_FILENAME, onnx_feeds, onnx_session, sha256_of
 from velov.features import FEATURES, add_features
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -46,7 +55,7 @@ def load_model(model_dir: Path) -> tuple[object, dict]:
     if sha256_of(model_path) != metadata["artifact"]["sha256"]:
         raise RuntimeError(f"Empreinte invalide pour {model_path}")
     # ONNX : un graphe de calcul, aucun code exécuté au chargement (contrairement à pickle / joblib).
-    return ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"]), metadata
+    return onnx_session(model_path, int(os.getenv("ORT_INTRA_OP_THREADS", "1"))), metadata
 
 
 @asynccontextmanager
@@ -69,6 +78,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Vélo'v availability API", version="1.0.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def add_process_time(request: Request, call_next):
+    """Temps passé dans l'API, sans le réseau ni l'attente avant d'être servi (comparé à Locust au TP5)."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time-Ms"] = f"{(time.perf_counter() - start) * 1000:.2f}"
+    return response
 
 
 @app.get("/health")
@@ -95,25 +113,50 @@ def model_info() -> dict:
     return {k: meta.get(k) for k in keys} | {"artifact_sha256": meta["artifact"]["sha256"]}
 
 
-@app.post("/v1/predict", response_model=PredictionResponse)
-def predict(request: PredictionRequest) -> PredictionResponse:
+def _predict(items: list[PredictionRequest]) -> list[PredictionResponse]:
+    """Les quatre étapes d'une prédiction, chronométrées une à une par scripts/bench_predict.py (TP5)."""
     if STATE["model"] is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
-    # add_features est partagé avec l'entraînement : le recalculer ici créerait un training-serving skew
-    frame = add_features(pd.DataFrame([request.model_dump()]))
-    raw = float(STATE["model"].run(None, onnx_feeds(frame[FEATURES]))[0].ravel()[0])
-    response = PredictionResponse(
-        station_id=request.station_id,
-        target_timestamp=request.timestamp + timedelta(hours=1),
-        predicted_bikes=min(max(raw, 0.0), request.capacity),
-        model_version=STATE["metadata"]["model_version"],
-    )
+    # 1. requête(s) validée(s) -> DataFrame
+    raw = pd.DataFrame([item.model_dump() for item in items])
+    # 2. features : add_features est partagé avec l'entraînement (le recalculer ici créerait un skew)
+    features = add_features(raw)[FEATURES]
+    # 3. le modèle ONNX
+    preds = STATE["model"].run(None, onnx_feeds(features))[0].ravel()
+    # 4. bornes [0, capacity] et réponses
+    preds = np.clip(preds, 0.0, raw["capacity"].to_numpy())
+    version = STATE["metadata"]["model_version"]
+    return [
+        PredictionResponse(
+            station_id=item.station_id,
+            target_timestamp=item.timestamp + timedelta(hours=1),
+            predicted_bikes=float(p),
+            model_version=version,
+        )
+        for item, p in zip(items, preds, strict=True)
+    ]
+
+
+def _log(responses: list[PredictionResponse]) -> None:
+    """Journalise les prédictions (EX-08) ; une base indisponible ne fait jamais échouer la prédiction."""
     url = db.database_url()
-    if url:
-        try:
-            db.save_prediction(
-                url, response.station_id, response.target_timestamp, response.predicted_bikes, response.model_version
-            )
-        except Exception:
-            logger.exception("Échec de l'enregistrement de la prédiction")
-    return response
+    if not url:
+        return
+    try:
+        db.save_predictions(url, responses)
+    except Exception:
+        logger.exception("Échec de l'enregistrement de la prédiction")
+
+
+@app.post("/v1/predict", response_model=PredictionResponse)
+def predict(request: PredictionRequest) -> PredictionResponse:
+    responses = _predict([request])
+    _log(responses)
+    return responses[0]
+
+
+@app.post("/v1/predict/batch", response_model=BatchPredictionResponse)
+def predict_batch(request: BatchPredictionRequest) -> BatchPredictionResponse:
+    responses = _predict(request.items)
+    _log(responses)
+    return BatchPredictionResponse(predictions=responses)

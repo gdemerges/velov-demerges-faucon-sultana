@@ -1,33 +1,46 @@
 # Runbook : API velov-availability
 
-> Template à compléter au fil des sessions. Public cible : une personne d'astreinte
-> qui ne connaît pas le projet et doit rétablir le service à 3 h du matin.
+> Public cible : une personne d'astreinte qui ne connaît pas le projet et doit rétablir le service à 3 h du matin.
+> Toutes les commandes se lancent depuis le dossier du dépôt (sur la VM : `~/velov-mlops`).
 
 ## 1. Vue d'ensemble
-- Ce que fait le service, en deux phrases :
-- Schéma d'architecture (lien) :
-- Dépendances (base de données, stockage du modèle...) :
+- Ce que fait le service : pour une station Vélo'v et un instant donné, l'API prédit le nombre de vélos
+  disponibles une heure plus tard (`POST /v1/predict`, ou `/v1/predict/batch` jusqu'à 1000 lignes).
+  Chaque prédiction porte la version du modèle et est journalisée en base.
+- Schéma d'architecture : README, sections Docker, Pipeline (TP3) et TP4.
+- Dépendances : PostgreSQL (`db`, journal `predictions`, tables bronze/silver/gold, registre MLflow) ;
+  le modèle est **dans l'image** (`/app/models/model.onnx` + `metadata.json`, empreinte vérifiée au démarrage).
+  Sans base, l'API prédit quand même (journalisation désactivée, erreur dans les logs).
+- SLO : 95 % des `/v1/predict` sous 200 ms, moins de 1 % d'erreurs (section 8).
 
 ## 2. Démarrer / arrêter
 ```bash
-# démarrer
-# arrêter
-# redémarrer un seul service
+cp .env.example .env                      # une seule fois ; POSTGRES_PASSWORD à changer, jamais dans git
+docker compose up -d --build --wait       # démarrer API + base (attend les healthchecks)
+docker compose stop                       # arrêter sans rien perdre (le volume pgdata reste)
+docker compose restart api                # redémarrer un seul service
+docker compose logs --tail 100 -f api     # suivre les logs
 ```
+Ne jamais lancer `docker compose down -v` sur la VM : `-v` supprime le volume de la base (journal, registre).
 
 ## 3. Vérifier que tout va bien
 | Vérification | Commande | Résultat attendu |
 |---|---|---|
 | Le process répond | `curl -s http://<hôte>:8000/health` | `{"status":"ok"}` |
 | Le modèle est chargé | `curl -s http://<hôte>:8000/ready` | HTTP 200 + version |
-| | | |
+| Quel modèle tourne | `curl -s http://<hôte>:8000/v1/model` | version, `registry.version`, métriques, données |
+| Conteneurs sains | `docker compose ps` | `api` et `db` `Up (healthy)` |
+| Une prédiction est journalisée | `docker compose exec db psql -U velov -d velov -c "select * from predictions order by id desc limit 3"` | lignes récentes, `created_at` en UTC |
+| Temps passé dans l'API | `curl -s -D - -o /dev/null http://<hôte>:8000/ready \| grep -i x-process-time` | quelques ms |
 
 ## 4. Incidents connus
 | Symptôme | Cause probable | Diagnostic | Action |
 |---|---|---|---|
-| `/ready` renvoie 503 | | | |
-| Le conteneur redémarre en boucle | | | |
-| Latence élevée | | | |
+| `/ready` renvoie 503 | modèle absent ou empreinte SHA-256 invalide (artefact modifié) | `docker compose logs api \| grep -i "chargement du modèle"` | reconstruire l'image (`docker compose up -d --build api`) ou revenir à l'image précédente (section 5) |
+| Le conteneur redémarre en boucle | `.env` absent (`POSTGRES_PASSWORD` requis), port 8000 déjà pris | `docker compose ps -a`, `docker compose logs api` | créer `.env` ; `API_PORT=8001 docker compose up -d` |
+| Prédictions non journalisées | base indisponible ou `DATABASE_URL` erronée | `docker compose logs api \| grep -i "base de données"` ; `docker compose ps db` | `docker compose up -d db`, puis `docker compose restart api` |
+| Latence élevée | file d'attente (débit proche de la capacité) ou CPU bridé | section 8 : comparer `X-Process-Time-Ms` à la latence client ; `docker stats --no-stream` | section 8, « près du plafond » |
+| `422` en masse côté client | client hors contrat (timestamp sans fuseau, champ inconnu, vélos > capacité) | corps de la réponse (`detail`) | corriger le client : ce n'est pas une panne de l'API (EX-01) |
 
 ## 5. Déployer une nouvelle version du modèle
 Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.0.1:5000`) :
@@ -54,7 +67,8 @@ Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.
 `mlartifacts`) : ne jamais l'utiliser sur la VM.
 
 ## 6. Contacts et escalade
--
+- Binôme Demerges / Faucon / Sultana (dépôt `gdemerges/velov-demerges-faucon-sultana`), canal Teams du cours.
+- VM, réseau de l'école, accès Proxmox : l'enseignant (Mohamed Gassem).
 
 ## 7. Pipeline de données (S3)
 
@@ -86,3 +100,50 @@ Vérifier ensuite l'idempotence : `./scripts/check_idempotence.sh`.
 | `Contract Error` sur gold | colonne ou type différent du contrat | comparer `dbt/models/gold/gold.yml` et `src/velov/contract.py` |
 | `SKIP relation gold...` | un test silver est en échec en amont | gold garde sa dernière version valide ; traiter l'échec silver |
 | `train --from-gold` : `SchemaErrors` | table gold hors contrat | l'entraînement s'arrête volontairement (EX-12) ; lire le détail des violations |
+
+## 8. Performance et capacité (EX-16)
+
+- **SLO** : 95 % des `POST /v1/predict` sous **200 ms**, moins de **1 %** d'erreurs.
+- **Capacité mesurée** (1 worker, 1 cœur, ORT 1 thread, mesure locale, README section Performance) :
+  **~42 req/s sous le SLO**, plafond **74 req/s** ; au-delà la latence explose (p95 610 ms à 100 usagers).
+- **Près du plafond** (débit > 35 req/s par worker, ou p95 qui monte) :
+  1. comparer `X-Process-Time-Ms` (temps dans l'API) à la latence vue par le client : s'ils sont proches, l'API calcule
+     lentement (CPU, `docker stats`) ; si l'écart grandit, les requêtes attendent leur tour (file) ;
+  2. vérifier que le conteneur n'est pas bridé : `docker exec <api> cat /sys/fs/cgroup/cpu.stat` (`nr_throttled`) ;
+     `ORT_INTRA_OP_THREADS` doit valoir 1 ;
+  3. ajouter un worker et un cœur (`compose.workers.yaml`, `docker update --cpus 2`) en surveillant la mémoire
+     (~100 Mo par worker) ;
+  4. la journalisation (75 % du temps d'une prédiction) est le prochain goulot : pool de connexions.
+
+## 9. Remplacer le modèle : stratégie et retour arrière (EX-18)
+
+Une seule VM, un seul conteneur API, pas de répartiteur de charge : un **canary** (x % du trafic vers le
+nouveau modèle) demanderait un proxy qu'on n'a pas. On fait donc **shadow, puis bascule**, avec retour arrière
+par l'image précédente.
+
+| Phase | Ce qui tourne | Durée | On passe à la suite si |
+|---|---|---|---|
+| 0. Hors ligne | `velov.promote` : challenger, champion et persistance sur la même fenêtre (EX-14) | — | décision PROMOUVOIR |
+| 1. Shadow | le challenger est livré dans une 2e image (`API_IMAGE=velov-api:m<v>-<commit>`, `API_PORT=8001`) ; un rejeu des requêtes de la veille (table `predictions`) lui est envoyé, ses réponses ne servent à personne | 24 h | MAE à H+1 du challenger <= MAE du champion sur les mêmes requêtes, 0 erreur 5xx, p95 sous le SLO (paliers de la section 8 sur le port 8001) |
+| 2. Bascule | `./scripts/release.sh` (section 5) : le challenger devient l'API | — | `/v1/model` donne la nouvelle version |
+| 3. Surveillance | le nouveau modèle sert seul ; l'ancienne image reste sur la VM (`docker image ls velov-api`) | 48 h | aucun seuil franchi |
+
+**Signaux et seuils de retour arrière** (pendant la phase 3, on revient en arrière dès qu'un seuil est franchi, sans débat) :
+
+| Signal | Où le lire | Seuil |
+|---|---|---|
+| `/ready` en 503 ou conteneur qui redémarre | `docker compose ps`, `curl /ready` | dès la première occurrence |
+| Erreurs 5xx sur `/v1/predict` | `docker compose logs api` | > 1 % sur 15 min |
+| Latence p95 | paliers de la section 8 (et Prometheus à partir de S6) | > 200 ms sous la charge habituelle |
+| Erreur du modèle | MAE à H+1 : `predictions` jointes à `bronze.station_status` une heure après | > MAE du champion précédent + 10 % sur 24 h |
+| Prédictions aberrantes | `select model_version, avg(predicted_bikes), count(*) from predictions group by 1` | moyenne qui s'écarte de plus de 30 % de la veille |
+
+**Commande de retour arrière** (moins d'une minute, sans build ni registre) :
+```bash
+docker image ls velov-api                                               # l'image d'avant : m<ancienne version>-<commit>
+API_IMAGE=velov-api:m<ancienne version>-<commit> docker compose up -d --no-build --wait api
+curl -s localhost:8000/v1/model                                         # registry.version = l'ancienne version
+python -m velov.promote --rollback                                      # puis remettre le registre d'accord (@champion)
+```
+Noter dans le registre la raison du retour arrière (tag `rollback` sur la version) et ouvrir un ticket :
+un modèle retiré ne revient qu'avec une nouvelle décision `velov.promote`.

@@ -1,0 +1,10 @@
+velov-demerges-faucon-sultana-api-1 82.22% 98.97MiB / 7.57GiB
+velov-demerges-faucon-sultana-db-1 34.30% 31.58MiB / 7.57GiB
+retailpulse-batch-airflow-webserver-1 0.06% 753.2MiB / 7.57GiB
+retailpulse-batch-airflow-scheduler-1 3.04% 763.9MiB / 7.57GiB
+retailpulse-batch-postgres-1 3.84% 68.36MiB / 7.57GiB
+velov-demerges-faucon-sultana-api-1 98.75% 101.1MiB / 7.57GiB
+velov-demerges-faucon-sultana-db-1 36.20% 51.45MiB / 7.57GiB
+retailpulse-batch-airflow-webserver-1 0.06% 753.2MiB / 7.57GiB
+retailpulse-batch-airflow-scheduler-1 3.16% 764MiB / 7.57GiB
+retailpulse-batch-postgres-1 1.30% 68.71MiB / 7.57GiB

@@ -1,0 +1,8 @@
+# TP5a : DistilBERT en float32 contre int8 (S5). En local, pas sur la VM ni dans l'image.
+# torch depuis PyPI embarque CUDA (plusieurs Go) ; la version CPU est bien plus légère :
+#   pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-quantization.txt
+torch==2.15.0
+transformers==5.23.0
+torchao==0.18.0
+pyarrow==25.0.1

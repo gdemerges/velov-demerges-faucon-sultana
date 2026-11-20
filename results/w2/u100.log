@@ -1,0 +1,4 @@
+[2026-11-17 15:55:54,386] Gabriel/INFO/locust.main: Starting Locust 2.47.0
+[2026-11-17 15:55:54,389] Gabriel/INFO/locust.main: Run time limit set to 120 seconds
+[2026-11-17 15:55:54,390] Gabriel/INFO/locust.runners: Ramping to 100 users at a rate of 20.00 per second
+[2026-11-17 15:55:58,412] Gabriel/INFO/locust.runners: All users spawned: {"AppUser": 100} (100 total users)

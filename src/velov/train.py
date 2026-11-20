@@ -221,7 +221,8 @@ def train_frame(
     out_dir.mkdir(parents=True, exist_ok=True)
     joblib.dump(pipeline, out_dir / MODEL_FILENAME)
     onnx_path = out_dir / ONNX_FILENAME
-    onnx_max_diff = export_onnx(pipeline, onnx_path, test_df[FEATURES])
+    # Écart vérifié sur TOUT l'historique (TP5, Stretch) : une valeur proche d'un seuil peut se trouver hors du test.
+    onnx_max_diff = export_onnx(pipeline, onnx_path, frame[FEATURES])
 
     metadata = {
         "model_name": "velov-availability",

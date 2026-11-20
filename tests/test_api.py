@@ -70,3 +70,25 @@ def test_without_model_health_ok_but_not_ready(tmp_path, monkeypatch, valid_payl
         assert c.get("/ready").status_code == 503
         assert c.get("/v1/model").status_code == 503
         assert c.post("/v1/predict", json=valid_payload).status_code == 503
+
+
+# --- TP5 : temps passé dans l'API, et prédictions par lot ---
+
+
+def test_process_time_header(client, valid_payload):
+    for r in (client.get("/ready"), client.post("/v1/predict", json=valid_payload)):
+        assert float(r.headers["X-Process-Time-Ms"]) >= 0
+
+
+def test_predict_batch_matches_unit_predictions(client, valid_payload):
+    other = {**valid_payload, "station_id": 1, "bikes_available": 3}
+    r = client.post("/v1/predict/batch", json={"items": [valid_payload, other]})
+    assert r.status_code == 200
+    batch = r.json()["predictions"]
+    unit = [client.post("/v1/predict", json=p).json() for p in (valid_payload, other)]
+    assert batch == unit
+
+
+def test_predict_batch_rejects_empty_and_oversized(client, valid_payload):
+    assert client.post("/v1/predict/batch", json={"items": []}).status_code == 422
+    assert client.post("/v1/predict/batch", json={"items": [valid_payload] * 1001}).status_code == 422

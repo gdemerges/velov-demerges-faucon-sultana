@@ -1,0 +1,7 @@
+date_utc=2026-11-17T14:48:53Z
+host=http://localhost:8000
+paliers=10 25 50 100 150 duree=2m warmup=1m
+commit=88cc302
+poste_coeurs=20
+locust=locust 2.47.0 from E:\cours\M2_DataEngineer_Ynov\Indus de l_ia dans le cloud\velov-demerges-faucon-sultana\.venv\Lib\site-packages\locust (Python 3.13.2)
+model={"status":"ready","model_version":"0.1.0"}

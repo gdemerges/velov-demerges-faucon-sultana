@@ -41,4 +41,11 @@ class PredictionResponse(BaseModel):
     model_version: str
 
 
-# STRETCH : BatchPredictionRequest (1 à 1000 PredictionRequest) et BatchPredictionResponse
+class BatchPredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[PredictionRequest] = Field(..., min_length=1, max_length=1000)
+
+
+class BatchPredictionResponse(BaseModel):
+    predictions: list[PredictionResponse]
