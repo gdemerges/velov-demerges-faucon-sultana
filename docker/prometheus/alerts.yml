@@ -1,0 +1,17 @@
+# Règles d'alerte de l'API (S6). Vérifier après chaque modification :
+#   docker compose exec prometheus promtool check rules /etc/prometheus/alerts.yml
+#   docker compose restart prometheus
+#
+# Fournie : ApiInjoignable. À écrire au TP6, étape 2 (S6 · 15) :
+#   - la règle d'enregistrement velov:latence_sli:ratio_rate5m (part des /v1/predict sous 200 ms) ;
+#   - LatenceHorsSLO (SLI sous 0,95 pendant 5 min) ;
+#   - Erreurs5xx (plus de 1 % de 5xx sur /v1/predict pendant 5 min).
+groups:
+  - name: velov-api
+    rules:
+      - alert: ApiInjoignable
+        expr: up{job="velov-api"} == 0
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "Prometheus ne joint plus l'API depuis 1 min"

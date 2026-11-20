@@ -1,0 +1,4 @@
+# Monitoring du modèle (S6) : à installer sur le poste ou sur la VM, pas dans l'image de l'API.
+#   pip install -r requirements-monitoring.txt
+evidently==0.7.23
+httpx==0.28.1
