@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 41,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -66,7 +66,7 @@
       "id": 2,
       "type": "timeseries",
       "title": "Part des 5xx",
-      "description": "Erreurs du service (les 4xx sont des erreurs de l'appelant). Seuil d'alerte Erreurs5xx : 1 %.",
+      "description": "Erreurs du service (les 4xx sont des erreurs de l'appelant). Seuil d'alerte Erreurs5xx : 1 %. « or vector(0) » : tant qu'aucune 5xx n'est survenue, la série n'existe pas ; on affiche 0 plutôt que « No data ».",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -84,7 +84,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(http_requests_total{status=\"5xx\"}[5m])) / sum(rate(http_requests_total[5m]))",
+          "expr": "(sum(rate(http_requests_total{status=\"5xx\"}[5m])) or vector(0)) / sum(rate(http_requests_total[5m]))",
           "legendFormat": "5xx"
         }
       ],
