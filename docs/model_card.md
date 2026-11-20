@@ -8,7 +8,7 @@
 - Date d'entraînement : 2026-11-20 09:58 UTC, pendant le build de l'image (`MODEL_FROM=train`, ADR-0004) :
   simulateur 90 jours, seed 42, empreinte des données `4a861c99`, SHA-256 de l'artefact `e822e260`
 - Responsables (binôme) : Demerges / Faucon / Sultana
-- Emplacement de l'artefact : dans l'image `velov-api:0.2.0-d9be716` (`/app/models/model.onnx` + `metadata.json`),
+- Emplacement de l'artefact : dans l'image `velov-api:0.2.0-6033a85` (reconstruite à l'identique depuis `0.2.0-d9be716`, même empreinte) (`/app/models/model.onnx` + `metadata.json`),
   copié pour le monitoring dans `~/velov-mlops/models/served/` (runbook, section 10)
 - Comparé au modèle précédent (0.1.0, image `velov-api:0.1.0-21a1b81`, toujours présente sur la VM pour un retour
   arrière) : MAE à l'entraînement 1,354 contre 1,339 ; semaine normale rejouée 1,350 contre 1,309 (ratio 0,74
