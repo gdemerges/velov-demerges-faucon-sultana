@@ -23,3 +23,5 @@ mlruns/
 certs/
 # Rapports de velov.monitor (régénérables)
 reports/
+# Journaux des tâches planifiées (VM)
+logs/
