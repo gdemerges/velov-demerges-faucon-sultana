@@ -3,7 +3,7 @@
 Dans cet ordre :
 1. Référence : la première semaine de la fenêtre de test du modèle servi (metadata.json), avec ses
    prédictions, recalculées par le même graphe ONNX que l'API.
-2. Courant : les 7 derniers jours de la table predictions, une ligne par station et par heure
+2. Courant : les 3 derniers jours de la table predictions (--days), une ligne par station et par heure
    (la plus récente si une heure a été prédite plusieurs fois), pour la version servie.
 3. Dérive : Evidently, un score par colonne, rapport HTML dans <out>/drift.html.
 4. Erreur réelle : la prédiction faite à t est jugée avec l'observation de t + 1 h, déjà dans la table
@@ -34,12 +34,15 @@ from velov.train import load_table
 NUMERICAL = ["temperature", "bikes_available", "occupancy_rate", "predicted_bikes"]
 CATEGORICAL = ["is_raining"]
 DRIFT_COLUMNS = NUMERICAL + CATEGORICAL
-# Seuil d'alerte sur le ratio MAE modèle / MAE persistance (justifié dans la model card, section Monitoring).
-# À l'entraînement, le ratio vaut 0,71 : 0,9 laisse passer les semaines ordinaires (0,72 à 0,78 rejouées).
-RATIO_MAX = 0.9
-# Par station : alerte si le modèle fait pire que la persistance, sur assez de prédictions pour que ce soit lisible.
-STATION_RATIO_MAX = 1.0
-STATION_MIN_PREDICTIONS = 100
+# Seuils calibrés par backtest pour une fenêtre de 3 jours (python -m velov.backtest, ADR-0005,
+# docs/backtest/resultats.md) : quantile 99 % des passages quotidiens normaux.
+# - ratio global MAE modèle / MAE persistance ;
+# - par station : ratio de la pire station d'un passage, sur assez de prédictions (90 % des 72 h de la fenêtre).
+# Seuils du TP6 (fenêtre 7 jours, choisis à la main) : 0,90 / 1,0 / 100, soit 16 % de passages normaux en alerte.
+WINDOW_DAYS = 3
+RATIO_MAX = 0.87
+STATION_RATIO_MAX = 1.19
+STATION_MIN_PREDICTIONS = 64
 
 # La fenêtre se cale sur la dernière observation PASSÉE : une requête datée dans le futur (appel de test,
 # horloge client fausse) déplacerait sinon toute la semaine courante sur elle.
@@ -178,11 +181,18 @@ def performance(current: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
     return overall, by_station
 
 
-def alerts(overall: dict, by_station: pd.DataFrame, ratio_max: float = RATIO_MAX) -> list[str]:
+def alerts(
+    overall: dict,
+    by_station: pd.DataFrame,
+    ratio_max: float = RATIO_MAX,
+    station_ratio_max: float = STATION_RATIO_MAX,
+    station_min_predictions: int = STATION_MIN_PREDICTIONS,
+) -> list[str]:
+    """Alertes de performance ; les seuils sont paramétrables pour le backtest (velov.backtest)."""
     out = []
     if overall["ratio"] > ratio_max:
         out.append(f"ratio global {overall['ratio']:.2f} > {ratio_max:.2f}")
-    bad = by_station[(by_station["n"] >= STATION_MIN_PREDICTIONS) & (by_station["ratio"] > STATION_RATIO_MAX)]
+    bad = by_station[(by_station["n"] >= station_min_predictions) & (by_station["ratio"] > station_ratio_max)]
     for station, row in bad.iterrows():
         out.append(
             f"station {station} : MAE modèle {row['mae_model']:.2f} > persistance {row['mae_persistence']:.2f}"
@@ -222,7 +232,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data", type=Path, required=True, help="données du modèle servi (/v1/model -> data)")
     parser.add_argument("--model-dir", type=Path, default=Path("models"), help="model.onnx + metadata.json servis")
     parser.add_argument("--out", type=Path, default=Path("reports"))
-    parser.add_argument("--days", type=int, default=7, help="taille des fenêtres de référence et courante")
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=WINDOW_DAYS,
+        help="taille des fenêtres de référence et courante (seuils calibrés pour 3)",
+    )
     args = parser.parse_args(argv)
 
     meta = load_metadata(args.model_dir)

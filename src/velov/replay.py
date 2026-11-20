@@ -42,12 +42,16 @@ def last_days(df: pd.DataFrame, days: int) -> pd.DataFrame:
     return out[out["timestamp"] > ts.max() - pd.Timedelta(days=days)].copy()
 
 
-def apply_scenario(df: pd.DataFrame, scenario: str) -> pd.DataFrame:
+def apply_scenario(df: pd.DataFrame, scenario: str, start: pd.Timestamp | None = None) -> pd.DataFrame:
+    """Injecte un scénario à partir de `start` (par défaut : dès le début pour le froid, au 3e jour pour le
+    déménagement). `start` sert au backtest du monitoring (velov.backtest), qui fait varier le début."""
     out = df.copy()
     if scenario == "froid":
-        out["temperature"] = (out["temperature"] - 15).round(1)
+        hit = out["timestamp"] >= (start if start is not None else out["timestamp"].min())
+        out.loc[hit, "temperature"] = (out.loc[hit, "temperature"] - 15).round(1)
     elif scenario == "demenagement":
-        start = out["timestamp"].min() + pd.Timedelta(days=2)
+        if start is None:
+            start = out["timestamp"].min() + pd.Timedelta(days=2)
         # Station 1 : résidentielle. Les stations 2, 5, 8... (profil bureaux) prennent son taux d'occupation.
         ref = out[out["station_id"] == 1].set_index("timestamp")
         ref_occ = ref["bikes_available"] / ref["capacity"]

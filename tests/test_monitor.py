@@ -64,13 +64,15 @@ def test_performance_against_persistence():
 
 def test_alerts_global_ratio_and_station_worse_than_persistence():
     by_station = pd.DataFrame(
-        {"n": [200, 200, 10], "mae_model": [2.85, 1.0, 5.0], "mae_persistence": [2.79, 2.0, 1.0]},
-        index=pd.Index([17, 3, 9], name="station_id"),
+        {"n": [70, 70, 70, 10], "mae_model": [3.4, 2.85, 1.0, 5.0], "mae_persistence": [2.8, 2.79, 2.0, 1.0]},
+        index=pd.Index([17, 14, 3, 9], name="station_id"),
     ).assign(ratio=lambda d: d["mae_model"] / d["mae_persistence"])
-    assert monitor.alerts({"ratio": 0.87}, by_station) == [
-        "station 17 : MAE modèle 2.85 > persistance 2.79 (ratio 1.02)"
-    ]  # station 9 : trop peu de prédictions pour conclure
-    assert monitor.alerts({"ratio": 0.95}, by_station.iloc[[1]]) == ["ratio global 0.95 > 0.90"]
+    assert monitor.alerts({"ratio": 0.80}, by_station) == [
+        "station 17 : MAE modèle 3.40 > persistance 2.80 (ratio 1.21)"
+    ]  # station 14 (1,02) : dans le bruit normal d'une station ; station 9 : trop peu de prédictions
+    assert monitor.alerts({"ratio": 0.90}, by_station.iloc[[2]]) == ["ratio global 0.90 > 0.87"]
+    # Seuils du TP6, toujours accessibles en paramètres (backtest)
+    assert len(monitor.alerts({"ratio": 0.80}, by_station, 0.9, 1.0, 64)) == 2
 
 
 def test_reference_is_first_week_of_test_window(model_dir):
