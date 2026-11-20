@@ -364,6 +364,75 @@ L'audit du locustfile IA (six défauts) a été rédigé par l'assistant, pas «
 à refaire en binôme avant l'oral.
 
 
+## Exploiter le service (TP6) : HTTPS, métriques, alertes, dérive
+
+Sur la VM (`192.168.1.234`, dépôt `~/velov-mlops`, branche `tp6`), la stack se lance avec trois fichiers compose,
+déclarés une fois pour toutes dans `.env` (`COMPOSE_FILE=compose.yaml:compose.mlflow.yaml:compose.monitoring.yaml`).
+
+```
+poste ──HTTPS :443──> proxy (Nginx, certificat auto-signé) ──> api :8000 ──> db (predictions)
+                         └── /grafana/ ──> grafana ──> prometheus :9090 ──lit /metrics toutes les 15 s──> api
+VM :  velov.monitor ──> db (127.0.0.1:5432) : dérive (Evidently) et MAE réelle face à la persistance
+```
+
+```bash
+./scripts/make_cert.sh 192.168.1.234     # certs/ (ignoré par git) ; velov.crt se donne aux clients
+docker compose up -d --build --wait
+```
+
+| Étape | Ce qui a été fait | Preuve (VM, 20/11) |
+|---|---|---|
+| 1. HTTPS | `docker/nginx/velov.conf` : HTTP redirigé en 301, TLS 1.2+, `/metrics` en 404, port 8000 plus publié | les cinq appels du runbook (section 3) : 301, 60, 200, 404, 502 ; `curl :8000` sans réponse |
+| 2. Métriques et alertes | `prometheus-fastapi-instrumentator` (seau à 0,2 s), `velov_model_info` ; `alerts.yml` : SLI, `LatenceHorsSLO`, `Erreurs5xx`, `ApiInjoignable`, burn rate | `promtool check rules` : 7 règles ; cible `velov-api` UP ; SLI calculé sous trafic ; API arrêtée à 09:17:54, `ApiInjoignable` firing à 09:18:55 |
+| 3. Tableau de bord | `docker/grafana/dashboards/velov.json` : débit par route, part des 5xx, SLI (seuil 0,95), modèle servi, et l'erreur réelle par heure (Should) | provisionné dans le dossier Velov ; servi sous `https://<VM>/grafana/`, port 3000 fermé |
+| 4. Modèle | `velov.monitor` (`src/velov/monitor.py`) ; la table `predictions` garde désormais les entrées (`observed_at`, `bikes_available`...) | trois semaines rejouées, rapport commenté dans la [model card](docs/model_card.md) (section 8) |
+
+Le monitor, sur la VM :
+```bash
+set -a && . ./.env && set +a
+export DATABASE_URL=postgresql+psycopg://velov:$POSTGRES_PASSWORD@127.0.0.1:5432/velov
+docker compose cp api:/app/models/. models/served/      # le modèle réellement servi
+python -m velov.replay --url https://192.168.1.234 --cacert certs/velov.crt --scenario normal
+python -m velov.monitor --db "$DATABASE_URL" --data data/velov_history.csv --model-dir models/served --out reports/
+```
+
+| Semaine rejouée | Dérive principale | MAE modèle | MAE persistance | Ratio (entraînement 0,71) | Code de sortie |
+|---|---|---|---|---|---|
+| Normale | `temperature` 0,39 | 1,309 | 1,821 | 0,72 | 0 |
+| Froid | `temperature` 4,44 | 1,419 | 1,821 | 0,78 | 0 |
+| Déménagement | occupation et prédictions 0,25 à 0,30 | 1,584 | 1,818 | 0,87 | 1 : 7 stations pires que la persistance |
+
+Le ratio global ne voit pas le déménagement (0,87 < 0,90). L'alerte vient du suivi par station : les 7 stations
+signalées sont exactement les stations de bureaux déplacées. Les alertes et la conduite à tenir sont dans le
+[runbook](docs/runbook.md), section 10. Exigences couvertes : EX-19, EX-20 et EX-21
+([docs/exigences.md](docs/exigences.md)).
+
+**Should.** Faits :
+- Grafana derrière le proxy ;
+- alerte de burn rate sur deux fenêtres (1 h et 5 min, facteur 6, justifiés dans le runbook) ;
+- erreur réelle par heure dans Grafana (utilisateur `grafana_ro`, lecture seule).
+
+Non fait : l'audit de la supervision écrite par une IA, noté individuellement, à faire en binôme sans assistant.
+
+**Extension choisie** : Monitoring ML planifié (★★★), [docs/extension.md](docs/extension.md).
+
+IA déclarée (TP6) : Claude Code (Opus 5.5) a écrit l'instrumentation, la migration de la table `predictions`,
+les règles d'alerte, le tableau de bord, `velov.monitor` et ses tests, la mise derrière le proxy de Grafana et
+sa source PostgreSQL. Il a aussi installé la stack sur la VM, rejoué les semaines et rédigé ce texte, le runbook
+(sections 3 et 10), la section Monitoring de la model card et le brouillon de la fiche d'extension.
+
+Vérifications :
+- pytest (52 tests) et ruff ;
+- les cinq appels HTTPS depuis le poste, ports 8000 et 3000 fermés ;
+- `promtool`, et `ApiInjoignable` provoquée ;
+- les chiffres du monitor comparés à ceux du cours ;
+- les écritures refusées pour `grafana_ro`.
+
+Corrigés en cours de route :
+- `velov.replay` (fourni) importait `load_table`, absent de notre `train.py` ;
+- `release.sh` interrogeait le port 8000, qui n'est plus publié ;
+- le test de dérive : sous 1 000 lignes, Evidently renvoie une p-value et non une distance.
+
 ## Exigences du projet
 
 Le service doit respecter les exigences de [docs/exigences.md](docs/exigences.md), de S1 à S9.
@@ -382,11 +451,13 @@ src/velov/
   tracking.py      runs MLflow (paramètres, métriques, commit, empreinte des données), registre, @challenger
   promote.py       règle de promotion, alias champion / previous-champion, retour arrière
   export.py        @alias du registre -> models/ (pour l'image) ; retrain.py : réentraînement planifié
-  api/main.py      FastAPI : /health, /ready, /v1/model, /v1/predict
+  replay.py        rejoue une semaine contre l'API (S6, fourni) ; monitor.py : dérive et erreur réelle (S6)
+  api/main.py      FastAPI : /health, /ready, /v1/model, /v1/predict, /metrics (S6)
   api/schemas.py   contrat d'entrée / sortie (Pydantic)
 dbt/               modèles silver et gold, contrat, tests de qualité
 .github/workflows/ ci.yml : lint, tests, secrets, données, image (S4)
 compose.mlflow.yaml, docker/   serveur MLflow (S4)
+compose.monitoring.yaml        proxy Nginx (TLS), Prometheus, Grafana (S6) : docker/nginx, docker/prometheus, docker/grafana
 scripts/           run_pipeline.sh, check_idempotence.sh, release.sh
 tests/             pytest (features, API, contrat, ONNX, modèle, registre)
 docs/              templates : model card, runbook, ADR
