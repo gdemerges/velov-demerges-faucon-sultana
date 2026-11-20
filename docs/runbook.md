@@ -214,8 +214,11 @@ résultat dans le Pushgateway (port 9091, local à la VM), que Prometheus lit.
   a l'URL peut écrire dans le salon : en cas de fuite, la supprimer dans Discord (Paramètres du salon,
   Intégrations, Webhooks), en créer une autre et remplacer le fichier. Alertmanager relit le fichier à chaque envoi.
 - **Tester la chaîne sans incident** :
-  `docker compose exec alertmanager amtool alert add TestDiscord severity=test summary="test" runbook="-" --alertmanager.url=http://localhost:9093`
+  `docker compose exec alertmanager amtool alert add alertname=TestDiscord severity=test --annotation=summary="test, à ignorer" --annotation=runbook="-" --alertmanager.url=http://localhost:9093`
   (message sous 30 s).
+- **Vérifié le 20/11 de bout en bout** : semaine « déménagement » rejouée, monitor en code 1 à 11:06:38,
+  `ModeleDegrade` en firing à 11:07:02, message Discord dans les 30 s suivantes ; semaine normale rejouée à 11:08:25,
+  message « Résolue » à 11:10:53 (`alertmanager_notifications_total{integration="discord"}` : 0 échec).
 - **Silence pendant une intervention prévue** :
   `docker compose exec alertmanager amtool silence add alertname=ApiInjoignable --duration=1h --comment="maintenance" --alertmanager.url=http://localhost:9093`.
 - **Après une modification** de `prometheus.yml` ou `alerts.yml` : `docker compose restart prometheus` (le fichier
