@@ -3,11 +3,16 @@
 > Mise à jour à chaque nouvelle version promue. Inspirée de Mitchell et al., "Model Cards for Model Reporting" (2019).
 
 ## 1. Identité
-- Nom / version : `velov-availability`, version 3 du registre MLflow (`@champion`), `model_version` 0.3.0
-- Date d'entraînement : 2026-10-29 (run `71af0a0d`, commit `2a1bec7`, `git_dirty=false`)
+- Nom / version : `velov-availability`, `model_version` 0.1.0, servi sur la VM depuis le TP6 (20/11/2026) ;
+  hors registre (`registry` vide dans `/v1/model`)
+- Date d'entraînement : 2026-11-20 09:08 UTC, pendant le build de l'image (`MODEL_FROM=train`, ADR-0004) :
+  simulateur 90 jours, seed 42, empreinte des données `4a861c99`, SHA-256 de l'artefact `b706545f`
 - Responsables (binôme) : Demerges / Faucon / Sultana
-- Emplacement de l'artefact : registre MLflow de la VM (`models:/velov-availability@champion`, paquet
-  `package/` du run), puis image `velov-api:m3-<commit>` livrée par `scripts/release.sh` (ADR-0004)
+- Emplacement de l'artefact : dans l'image `velov-api:0.1.0-21a1b81` (`/app/models/model.onnx` + `metadata.json`),
+  copié pour le monitoring dans `~/velov-mlops/models/served/` (runbook, section 10)
+- Historique : jusqu'au TP5, le modèle servi était la version 3 du registre MLflow (`@champion`, `model_version`
+  0.3.0, run `71af0a0d`, commit `2a1bec7`), livrée par `scripts/release.sh`. Le dépôt a été réinstallé sur la VM
+  au TP6 et son registre MLflow est vide : ce modèle n'est plus servi. Les sections 3 et 4 décrivent encore la v3.
 
 ## 2. Usage prévu
 - Ce que le modèle prédit : le nombre de vélos disponibles dans une heure, par station Vélo'v
