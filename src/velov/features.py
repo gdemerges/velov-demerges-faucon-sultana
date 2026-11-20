@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from velov.calendrier import is_public_holiday, is_school_holiday
+
 TARGET = "bikes_next_hour"
 
 # Les instants circulent en UTC, mais les usages suivent l'heure locale de Lyon :
@@ -32,6 +34,8 @@ NUMERIC_FEATURES = [
     "hour",
     "day_of_week",
     "is_weekend",
+    "is_public_holiday",  # calculés depuis timestamp (velov.calendrier) : le contrat d'entrée ne change pas
+    "is_school_holiday",
     "capacity",
     "bikes_available",
     "occupancy_rate",
@@ -59,6 +63,9 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     out["hour"] = ts.dt.hour
     out["day_of_week"] = ts.dt.dayofweek
     out["is_weekend"] = (ts.dt.dayofweek >= 5).astype(int)
+    local_dates = ts.dt.date
+    out["is_public_holiday"] = is_public_holiday(local_dates)
+    out["is_school_holiday"] = is_school_holiday(local_dates)
     out["occupancy_rate"] = out["bikes_available"] / out["capacity"]
     out["is_raining"] = out["is_raining"].astype(int)
     out["station_id"] = out["station_id"].astype(str)  # catégorie, pas un nombre

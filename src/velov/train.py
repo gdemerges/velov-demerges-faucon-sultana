@@ -212,7 +212,7 @@ def train_frame(
     frame: pd.DataFrame,
     data_info: dict,
     out_dir: Path,
-    version: str = "0.1.0",
+    version: str = "0.2.0",
     test_days: int = 14,
     seed: int = 42,
     params: dict | None = None,
@@ -271,7 +271,7 @@ def train_frame(
 def train(
     data_path: Path | None,
     out_dir: Path,
-    version: str = "0.1.0",
+    version: str = "0.2.0",
     test_days: int = 14,
     seed: int = 42,
     gold_url: str | None = None,
@@ -288,7 +288,7 @@ def main() -> None:
     parser.add_argument("--data", type=Path, default=Path("data/velov_history.csv"))
     parser.add_argument("--from-gold", action="store_true", help="lire gold.gold_training_hourly (DATABASE_URL)")
     parser.add_argument("--out", type=Path, default=Path("models"))
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="0.2.0")  # 0.2.0 : + jours fériés et vacances scolaires
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--test-days", type=int, default=14)
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_PARAMS["learning_rate"])
