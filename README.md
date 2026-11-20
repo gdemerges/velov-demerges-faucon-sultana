@@ -438,6 +438,11 @@ signalées sont exactement les stations de bureaux déplacées. Les alertes et l
 - alerte de burn rate sur deux fenêtres (1 h et 5 min, facteur 6, justifiés dans le runbook) ;
 - erreur réelle par heure dans Grafana (utilisateur `grafana_ro`, lecture seule).
 
+**Stretch.** Fait : `velov.monitor` chaque jour dans la crontab de la VM (`scripts/monitor_daily.sh`, 6 h 10 UTC).
+Une alerte (code 1) laisse une ligne dans `logs/monitor.log` et dans `journalctl -t velov-monitor`. Ce chemin a été
+vérifié en rejouant la semaine « déménagement ». La même crontab lance `dbt build` toutes les heures
+(`scripts/dbt_build.sh`).
+
 Non fait : l'audit de la supervision écrite par une IA, noté individuellement, à faire en binôme sans assistant.
 
 **Extension choisie** : Monitoring ML planifié (★★★), [docs/extension.md](docs/extension.md).

@@ -228,3 +228,17 @@ Code de sortie : 0 tout va bien, 1 alerte de performance, 2 rien à surveiller.
 | Code 2 (aucune prédiction) | astreinte | l'API ne journalise plus : section 4, « Prédictions non journalisées » |
 
 Une dérive ne promeut jamais un modèle toute seule : la règle de S4 et un humain décident.
+
+**Exécution quotidienne.** La crontab de la VM lance `scripts/monitor_daily.sh` chaque jour à 6 h 10 UTC. Il juge
+le modèle que sert l'API à cet instant (copié depuis le conteneur), écrit le rapport dans `reports/<date>/` et
+ajoute une ligne à `logs/monitor.log`.
+
+| Ligne du journal | Code | Où d'autre | Conduite |
+|---|---|---|---|
+| `OK modèle …, ratio …` | 0 | — | rien |
+| `ALERTE modèle …, ratio … : station …` | 1 | `journalctl -t velov-monitor` | tableau ci-dessus (ratio global ou stations) |
+| `RIEN-À-JUGER` | 2 | — | l'API ne journalise plus, ou aucune vérité à H+1 : section 4 |
+| `ERREUR` | 3 ou autre | `journalctl -t velov-monitor` | `logs/monitor.last.txt` ; conteneur `api` arrêté : `docker compose up -d api` |
+
+Vérifié le 20/11 : semaine « déménagement » rejouée, le script sort en code 1, et l'alerte (7 stations) se retrouve
+dans `logs/monitor.log` et dans `journalctl`.
