@@ -113,6 +113,12 @@ Le collecteur les écrit après chaque relevé. Un échec est journalisé
 | Référentiel et altitudes | `docker compose exec db psql -U velov -d velov -c "select count(*), count(elevation_m) from bronze.station_info"` | ~459 stations, toutes avec une altitude |
 | Prévisions | `docker compose exec db psql -U velov -d velov -c "select max(issued_at), count(*) from bronze.weather_forecast"` | `issued_at` = heure du dernier relevé, 3 lignes par heure |
 | Features | `cd dbt && dbt build --profiles-dir .` | `gold_features_hourly` construite, `features_no_lookahead` PASS |
+| Build planifié | `crontab -l` ; `tail -5 logs/dbt_build.log` | `55 * * * * .../scripts/dbt_build.sh` ; une ligne `OK ... PASS=34` par heure |
+
+`dbt build` tourne toutes les heures à :55 (crontab de la VM, `scripts/dbt_build.sh`). Une ligne `ÉCHEC` dans
+`logs/dbt_build.log` renvoie au détail dans `logs/dbt_build.last.txt`. Gold garde alors sa dernière version valide
+(tests bloquants) : on corrige la cause (section « `dbt build` échoue » ci-dessous), puis on relance le script à la main.
+`SAUTÉ` signifie que le build précédent n'était pas fini : à surveiller s'il se répète.
 
 Ajouter un événement (match, grève TCL, travaux) : une ligne par jour dans `dbt/seeds/events_lyon.csv`, **avec sa
 source**, puis `dbt seed --profiles-dir .`. Mettre à jour les gares et universités : `python scripts/refresh_poi.py`,
