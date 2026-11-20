@@ -114,3 +114,13 @@ def test_sqlalchemy_url_accepted(url, monkeypatch):
     with pytest.raises(_Stop):
         monitor.fetch_predictions(url, 7)
     assert seen["url"].startswith("postgresql://")
+
+
+def test_no_truth_means_nothing_to_judge():
+    """Une seule heure par station : aucune vérité à H+1, donc rien à juger (main() sort en code 2)."""
+    overall, by_station = monitor.performance(monitor.current_window(_rows(n_hours=1), "1.0.0"))
+    assert overall["n"] == 0 and by_station.empty
+
+
+def test_window_ignores_future_observations():
+    assert "observed_at <= now()" in monitor.CURRENT_SQL

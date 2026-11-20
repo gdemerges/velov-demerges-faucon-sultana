@@ -41,13 +41,16 @@ RATIO_MAX = 0.9
 STATION_RATIO_MAX = 1.0
 STATION_MIN_PREDICTIONS = 100
 
+# La fenêtre se cale sur la dernière observation PASSÉE : une requête datée dans le futur (appel de test,
+# horloge client fausse) déplacerait sinon toute la semaine courante sur elle.
 CURRENT_SQL = """
 SELECT DISTINCT ON (station_id, observed_at)
        station_id, observed_at, capacity, bikes_available, temperature, is_raining,
        predicted_bikes, model_version, created_at
 FROM predictions
 WHERE observed_at IS NOT NULL
-  AND observed_at > (SELECT max(observed_at) FROM predictions) - make_interval(days => %s)
+  AND observed_at <= now()
+  AND observed_at > (SELECT max(observed_at) FROM predictions WHERE observed_at <= now()) - make_interval(days => %s)
 ORDER BY station_id, observed_at, created_at DESC
 """
 
@@ -153,6 +156,8 @@ def drift(reference: pd.DataFrame, current: pd.DataFrame, html: Path | None) -> 
 def performance(current: pd.DataFrame) -> tuple[dict, pd.DataFrame]:
     """MAE du modèle et de la persistance sur les lignes qui ont leur vérité, globale et par station."""
     judged = current.dropna(subset=["bikes_next_hour"])
+    if judged.empty:
+        return {"n": 0, "mae_model": None, "mae_persistence": None, "ratio": None}, pd.DataFrame()
     err = judged.assign(
         err_model=(judged["predicted_bikes"] - judged["bikes_next_hour"]).abs(),
         err_persistence=(judged["bikes_available"] - judged["bikes_next_hour"]).abs(),
@@ -232,8 +237,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Aucune prédiction du modèle {meta['model_version']} sur les {args.days} derniers jours")
         return 2
 
-    scores = drift(reference, current, args.out / "drift.html")
     overall, by_station = performance(current)
+    if overall["n"] == 0:
+        # Sans vérité (aucune observation à t + 1 h), on ne peut rien juger : ce n'est pas « tout va bien ».
+        print(f"{len(current)} prédiction(s) du modèle {meta['model_version']}, aucune avec sa vérité à H+1")
+        return 2
+    scores = drift(reference, current, args.out / "drift.html")
     found = alerts(overall, by_station)
     text = report_text(meta, reference, current, scores, overall, by_station, found)
     print(text)
