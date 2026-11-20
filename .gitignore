@@ -18,3 +18,8 @@ mlruns/
 .env
 !.env.example
 *.egg-info/
+
+# Certificat TLS et sa clé (scripts/make_cert.sh) : la clé ne quitte jamais la VM (EX-19)
+certs/
+# Rapports de velov.monitor (régénérables)
+reports/

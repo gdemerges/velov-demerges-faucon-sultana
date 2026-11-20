@@ -2,11 +2,30 @@
 #   docker compose exec prometheus promtool check rules /etc/prometheus/alerts.yml
 #   docker compose restart prometheus
 #
-# Fournie : ApiInjoignable. À écrire au TP6, étape 2 (S6 · 15) :
-#   - la règle d'enregistrement velov:latence_sli:ratio_rate5m (part des /v1/predict sous 200 ms) ;
-#   - LatenceHorsSLO (SLI sous 0,95 pendant 5 min) ;
-#   - Erreurs5xx (plus de 1 % de 5xx sur /v1/predict pendant 5 min).
+# SLO (EX-16, runbook section 8) : 95 % des POST /v1/predict sous 200 ms, moins de 1 % d'erreurs.
+# Chaque alerte décrit un symptôme vécu par l'appelant, porte une durée (for) et renvoie au runbook (section 10).
 groups:
+  - name: velov-sli
+    rules:
+      # Part des prédictions servies sous 200 ms sur 5 min. Possible parce que 0.2 est une borne d'histogramme
+      # (LATENCY_BUCKETS dans main.py) : sans elle, le SLI ne se calcule pas (S6 · 14).
+      - record: velov:latence_sli:ratio_rate5m
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{handler="/v1/predict",le="0.2"}[5m]))
+            /
+          sum(rate(http_request_duration_seconds_count{handler="/v1/predict"}[5m]))
+      # Mêmes ratios sur 1 h, pour le burn rate (deux fenêtres, ci-dessous).
+      - record: velov:latence_sli:ratio_rate1h
+        expr: |
+          sum(rate(http_request_duration_seconds_bucket{handler="/v1/predict",le="0.2"}[1h]))
+            /
+          sum(rate(http_request_duration_seconds_count{handler="/v1/predict"}[1h]))
+      - record: velov:erreurs_5xx:ratio_rate5m
+        expr: |
+          sum(rate(http_requests_total{handler="/v1/predict",status="5xx"}[5m]))
+            /
+          sum(rate(http_requests_total{handler="/v1/predict"}[5m]))
+
   - name: velov-api
     rules:
       - alert: ApiInjoignable
@@ -15,3 +34,38 @@ groups:
         labels: {severity: page}
         annotations:
           summary: "Prometheus ne joint plus l'API depuis 1 min"
+          runbook: "docs/runbook.md, section 10 : ApiInjoignable"
+
+      # Le SLO est menacé : moins de 95 % des prédictions sous 200 ms, pendant 5 min d'affilée.
+      # for: 5m filtre le pic de quelques secondes qui se résorbe seul (S6 · 16).
+      - alert: LatenceHorsSLO
+        expr: velov:latence_sli:ratio_rate5m < 0.95
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $value | humanizePercentage }} des /v1/predict sous 200 ms (SLO : 95 %)"
+          runbook: "docs/runbook.md, section 10 : LatenceHorsSLO"
+
+      # Plus de 1 % de 5xx sur /v1/predict. Les 4xx sont des erreurs de l'appelant : suivies, pas alertées.
+      - alert: Erreurs5xx
+        expr: velov:erreurs_5xx:ratio_rate5m > 0.01
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $value | humanizePercentage }} de 5xx sur /v1/predict (seuil : 1 %)"
+          runbook: "docs/runbook.md, section 10 : Erreurs5xx"
+
+      # Burn rate (Should) : budget d'erreur = 5 % de requêtes lentes. Facteur 6 = budget consommé 6 fois
+      # trop vite (30 % de requêtes lentes) ; il faut que ce soit vrai sur 1 h ET sur 5 min :
+      # la fenêtre longue évite d'alerter sur un pic, la courte fait retomber l'alerte dès que c'est réglé.
+      # Choix du facteur et des fenêtres : runbook section 10.
+      - alert: LatenceBudgetBrule
+        expr: |
+          (1 - velov:latence_sli:ratio_rate1h) > 6 * 0.05
+            and
+          (1 - velov:latence_sli:ratio_rate5m) > 6 * 0.05
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "Budget de latence brûlé 6 fois trop vite (1 h et 5 min)"
+          runbook: "docs/runbook.md, section 10 : LatenceBudgetBrule"
