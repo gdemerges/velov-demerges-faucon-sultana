@@ -36,6 +36,9 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.13.5
+    depends_on:
+      - alertmanager
+      - pushgateway
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
@@ -64,6 +67,32 @@ services:
       - prometheus
     restart: unless-stopped
 
+  # Envoie les alertes de Prometheus sur Discord (Stretch S6). Non publié : on lit les alertes dans Prometheus
+  # ou Grafana ; amtool s'utilise par docker compose exec.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./secrets:/etc/alertmanager/secrets:ro      # discord_webhook_url, hors de git
+      - alertdata:/alertmanager                      # silences et notifications déjà envoyées
+    restart: unless-stopped
+
+  # Résultats des tâches planifiées (dbt build, velov.monitor), poussés par leurs scripts depuis la VM.
+  # Publié en local seulement : les scripts tournent sur la VM, rien ne doit y écrire depuis le réseau.
+  pushgateway:
+    image: prom/pushgateway:v1.11.1
+    command:
+      - --persistence.file=/data/metrics   # garde le dernier résultat après un redémarrage (sinon MonitorAbsent)
+      - --persistence.interval=1m
+    volumes:
+      - pushdata:/data
+    ports:
+      - "127.0.0.1:9091:9091"
+    restart: unless-stopped
+
   # Crée ou met à jour l'utilisateur grafana_ro (lecture seule sur predictions), puis s'arrête.
   # Après l'API : c'est elle qui crée la table predictions au démarrage.
   grafana-db-init:
@@ -85,3 +114,5 @@ services:
 volumes:
   promdata:
   grafanadata:
+  alertdata:
+  pushdata:

@@ -1,0 +1,27 @@
+# Alertmanager (S6, Stretch) : reçoit les alertes de Prometheus, les regroupe, les envoie sur Discord.
+# Vérifier après modification :
+#   docker compose exec alertmanager amtool check-config /etc/alertmanager/alertmanager.yml
+#
+# L'URL du webhook Discord est un secret (quiconque la connaît peut écrire dans le salon) : elle vit dans
+# secrets/discord_webhook_url sur la VM (dossier ignoré par git), jamais dans ce fichier.
+route:
+  receiver: discord
+  group_by: [alertname]
+  group_wait: 30s        # attend 30 s pour regrouper les alertes nées ensemble en un seul message
+  group_interval: 5m     # une alerte qui rejoint un groupe déjà notifié attend au plus 5 min
+  repeat_interval: 4h    # une alerte qui dure est rappelée toutes les 4 h, pas toutes les 15 s
+  routes:
+    - matchers: ['severity="data"']   # monitor et dbt : un état qui change au plus une fois par heure ou par jour
+      repeat_interval: 24h
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager/secrets/discord_webhook_url
+        send_resolved: true   # un message aussi quand l'alerte retombe
+        title: '{{ if eq .Status "firing" }}🔴 {{ else }}✅ {{ end }}{{ .CommonLabels.alertname }} ({{ .Alerts | len }})'
+        message: |-
+          {{ range .Alerts }}{{ if eq .Status "firing" }}**En cours**{{ else }}**Résolue**{{ end }} : {{ .Annotations.summary }}
+          Gravité : {{ .Labels.severity }} · depuis {{ .StartsAt.Format "02/01 15:04 MST" }}
+          Que faire : {{ .Annotations.runbook }}
+          {{ end }}

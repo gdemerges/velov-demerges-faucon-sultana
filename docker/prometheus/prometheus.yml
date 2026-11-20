@@ -5,7 +5,20 @@ global:
 rule_files:
   - alerts.yml
 
+# Alertes envoyées à Alertmanager, qui notifie Discord (docker/alertmanager/alertmanager.yml).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: velov-api
     static_configs:
       - targets: ["api:8000"]
+
+  # Résultats des tâches planifiées (dbt build, velov.monitor), poussés par leurs scripts.
+  # honor_labels : garder le label job de la tâche (velov_monitor, velov_dbt) et non celui du Pushgateway.
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]

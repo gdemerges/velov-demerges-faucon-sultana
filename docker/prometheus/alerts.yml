@@ -69,3 +69,40 @@ groups:
         annotations:
           summary: "Budget de latence brûlé 6 fois trop vite (1 h et 5 min)"
           runbook: "docs/runbook.md, section 10 : LatenceBudgetBrule"
+
+  # Tâches planifiées de la VM (crontab) : leurs scripts poussent leur résultat dans le Pushgateway.
+  # Un monitor qui ne tourne plus ne lève jamais d'alerte : d'où les règles « Absent ».
+  - name: velov-batch
+    rules:
+      - alert: ModeleDegrade
+        expr: velov_monitor_alert == 1
+        labels: {severity: data}
+        annotations:
+          summary: >-
+            velov.monitor : modèle {{ $labels.model_version }} en alerte (ratio global
+            {{ with printf "velov_monitor_ratio{model_version='%s'}" $labels.model_version | query }}{{ . | first | value | printf "%.2f" }}{{ end }},
+            {{ with printf "velov_monitor_stations_alert{model_version='%s'}" $labels.model_version | query }}{{ . | first | value }}{{ end }} station(s) pires que la persistance)
+          runbook: "docs/runbook.md, section 10 : rapport dans reports/<date>/, journal logs/monitor.log"
+
+      - alert: MonitorAbsent
+        expr: time() - max(velov_monitor_last_run_timestamp_seconds) > 26 * 3600 or absent(velov_monitor_last_run_timestamp_seconds)
+        for: 10m
+        labels: {severity: data}
+        annotations:
+          summary: "velov.monitor n'a pas tourné depuis plus de 26 h : la surveillance du modèle est aveugle"
+          runbook: "docs/runbook.md, section 10 : crontab -l, logs/monitor.log, logs/monitor.last.txt"
+
+      - alert: DbtBuildEnEchec
+        expr: velov_dbt_build_success == 0
+        labels: {severity: data}
+        annotations:
+          summary: "dbt build en échec : gold garde sa dernière version valide"
+          runbook: "docs/runbook.md, section 7 : logs/dbt_build.last.txt, puis « dbt build échoue »"
+
+      - alert: DbtBuildAbsent
+        expr: time() - max(velov_dbt_build_last_run_timestamp_seconds) > 3 * 3600 or absent(velov_dbt_build_last_run_timestamp_seconds)
+        for: 10m
+        labels: {severity: data}
+        annotations:
+          summary: "dbt build n'a pas tourné depuis plus de 3 h"
+          runbook: "docs/runbook.md, section 7 : crontab -l, logs/dbt_build.log"

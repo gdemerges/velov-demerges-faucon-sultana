@@ -25,3 +25,5 @@ certs/
 reports/
 # Journaux des tâches planifiées (VM)
 logs/
+# Secrets de la VM (webhook Discord...)
+secrets/
