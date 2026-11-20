@@ -104,6 +104,20 @@ Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.
 Un relevé manqué ne peut pas être récupéré (la source ne fournit que l'état courant) : le trou reste dans
 bronze et gold n'y fabrique pas de cible. Relancer vite limite la perte ; chaque jour sans collecte manque à l'entraînement.
 
+### Enrichissements (référentiel, altitude, prévision météo)
+Le collecteur les écrit après chaque relevé. Un échec est journalisé
+(`Enrichissement « ... » échoué : relevé conservé`) et ne fait jamais perdre le relevé des stations.
+
+| Vérification | Commande | Attendu |
+|---|---|---|
+| Référentiel et altitudes | `docker compose exec db psql -U velov -d velov -c "select count(*), count(elevation_m) from bronze.station_info"` | ~459 stations, toutes avec une altitude |
+| Prévisions | `docker compose exec db psql -U velov -d velov -c "select max(issued_at), count(*) from bronze.weather_forecast"` | `issued_at` = heure du dernier relevé, 3 lignes par heure |
+| Features | `cd dbt && dbt build --profiles-dir .` | `gold_features_hourly` construite, `features_no_lookahead` PASS |
+
+Ajouter un événement (match, grève TCL, travaux) : une ligne par jour dans `dbt/seeds/events_lyon.csv`, **avec sa
+source**, puis `dbt seed --profiles-dir .`. Mettre à jour les gares et universités : `python scripts/refresh_poi.py`,
+puis relire le diff.
+
 ### Rejouer une journée
 Le rejeu ne duplique rien (clé primaire station + heure, `ON CONFLICT DO NOTHING`) :
 ```bash

@@ -109,6 +109,32 @@ Exploitation : [runbook](docs/runbook.md).
 | EX-11 pas d'information du futur | test dbt `no_lookahead` (dans `dbt build`) |
 | EX-12 gold hors contrat jamais publiée | contrat dbt `enforced`, tests bloquants, `pytest tests/test_contract.py` |
 
+### Données d'enrichissement (collectées, pas encore dans le modèle)
+
+Sur le simulateur, ces données n'apportent rien de mesurable : il ne contient ni position, ni événements, ni
+prévisions. On les **collecte d'abord** sur les vraies stations, et le modèle ne les utilisera que lorsque
+quelques semaines de données réelles permettront de mesurer leur gain (run MLflow par variante, règle de
+promotion).
+
+| Donnée | Source | Où | Fréquence |
+|---|---|---|---|
+| Position, commune, catégorie de quartier (`pole`) | flux Vélo'v Grand Lyon (déjà lu par le collecteur) | `bronze.station_info` | à chaque relevé |
+| Altitude | Open-Meteo, API d'élévation | `bronze.station_info.elevation_m` | une fois par station |
+| Prévision météo des 3 heures suivantes | Open-Meteo, prévision horaire | `bronze.weather_forecast` | à chaque relevé |
+| Gares, établissements d'enseignement supérieur | OpenStreetMap (ODbL), `scripts/refresh_poi.py` | seed `dbt/seeds/poi_lyon.csv` | à la main |
+| Événements (Fête des Lumières 2026 : 5 au 8 décembre) | ajout manuel avec source | seed `dbt/seeds/events_lyon.csv` | à la main |
+
+dbt en tire `gold.gold_features_hourly`, avec une ligne par ligne de gold :
+- historique de la station (relevés à t − 1 h, t − 24 h et t − 168 h) ;
+- occupation moyenne des voisines à moins de 500 m ;
+- pluie et température prévues à t + 1 h, publiées à t ;
+- altitude et écart d'altitude avec les voisines (pente locale) ;
+- distances à la gare et à l'établissement d'enseignement supérieur les plus proches ;
+- jour d'événement.
+
+Le test `features_no_lookahead` vérifie que rien ne vient du futur (EX-11). Un échec de ces enrichissements
+n'empêche jamais d'enregistrer le relevé des stations.
+
 ## Tracer, promouvoir, intégrer (TP4)
 
 ```
