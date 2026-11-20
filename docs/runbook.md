@@ -24,14 +24,35 @@ docker compose logs --tail 100 -f api     # suivre les logs
 Ne jamais lancer `docker compose down -v` sur la VM : `-v` supprime le volume de la base (journal, registre).
 
 ## 3. Vérifier que tout va bien
+
+Depuis S6, l'API n'est joignable **que par le proxy, en HTTPS** (EX-19) : le port 8000 n'est plus publié.
+Sur la VM, `.env` contient `COMPOSE_FILE=compose.yaml:compose.mlflow.yaml:compose.monitoring.yaml`, lu par toute
+commande `docker compose` (`release.sh` compris). Le client fait confiance au certificat auto-signé avec
+`--cacert certs/velov.crt` (copié depuis la VM ; la clé `certs/velov.key` n'en sort jamais).
+
+Les cinq appels de contrôle, depuis le poste (`VM=192.168.1.234`) :
+```bash
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" http://$VM/ready     # 301 https://192.168.1.234/ready
+curl -sS https://$VM/ready                                                    # curl: (60) self-signed certificate
+curl -s --cacert certs/velov.crt https://$VM/ready                            # {"status":"ready","model_version":"0.1.0"}
+curl -s --cacert certs/velov.crt -o /dev/null -w "%{http_code}\n" https://$VM/metrics   # 404 : /metrics reste interne
+# sur la VM : docker compose stop api, puis depuis le poste
+curl -s --cacert certs/velov.crt -o /dev/null -w "%{http_code}\n" https://$VM/ready     # 502 : le proxy ne joint plus l'API
+curl -s -m 3 http://$VM:8000/ready                                            # aucune réponse : port 8000 fermé
+```
+
 | Vérification | Commande | Résultat attendu |
 |---|---|---|
-| Le process répond | `curl -s http://<hôte>:8000/health` | `{"status":"ok"}` |
-| Le modèle est chargé | `curl -s http://<hôte>:8000/ready` | HTTP 200 + version |
-| Quel modèle tourne | `curl -s http://<hôte>:8000/v1/model` | version, `registry.version`, métriques, données |
+| Le process répond | `curl -s --cacert certs/velov.crt https://<hôte>/health` | `{"status":"ok"}` |
+| Le modèle est chargé | `curl -s --cacert certs/velov.crt https://<hôte>/ready` | HTTP 200 + version |
+| Quel modèle tourne | `curl -s --cacert certs/velov.crt https://<hôte>/v1/model` | version, `registry.version`, métriques, données |
+| Prometheus lit l'API | `http://<hôte>:9090/targets` | `velov-api` UP |
+| Alertes | `http://<hôte>:9090/alerts` | toutes `inactive` en temps normal |
+| Tableau de bord | `https://<hôte>/grafana/` (dossier Velov, « Vélo'v · API ») | débit, 5xx, SLI, modèle servi |
 | Conteneurs sains | `docker compose ps` | `api` et `db` `Up (healthy)` |
 | Une prédiction est journalisée | `docker compose exec db psql -U velov -d velov -c "select * from predictions order by id desc limit 3"` | lignes récentes, `created_at` en UTC |
-| Temps passé dans l'API | `curl -s -D - -o /dev/null http://<hôte>:8000/ready \| grep -i x-process-time` | quelques ms |
+| Temps passé dans l'API | `curl -s --cacert certs/velov.crt -D - -o /dev/null https://<hôte>/ready \| grep -i x-process-time` | quelques ms |
+| Temps vu par le proxy | `docker compose logs --tail 20 proxy` | `rt=` (total) proche de `urt=` (API) |
 
 ## 4. Incidents connus
 | Symptôme | Cause probable | Diagnostic | Action |
@@ -49,7 +70,7 @@ Sur la VM (le serveur MLflow y est joignable, `MLFLOW_TRACKING_URI=http://127.0.
    (l'ancien champion prend l'alias `previous-champion`, la raison est taguée sur la version).
 2. Livrer : `git pull origin main && ./scripts/release.sh` (export de `@champion`, image
    `velov-api:m<version>-<commit>`, redémarrage de l'API, attend le healthcheck).
-3. Contrôler : `curl -s localhost:8000/v1/model` -> `registry.version` est la nouvelle version.
+3. Contrôler : `curl -s --cacert certs/velov.crt https://$VM/v1/model` -> `registry.version` est la nouvelle version.
 4. Retour arrière (rollback) :
    - le plus rapide, sans build : `docker image ls velov-api`, puis
      `API_IMAGE=velov-api:m<ancienne version>-<commit> docker compose up -d --no-build --wait api` ;
@@ -142,8 +163,48 @@ par l'image précédente.
 ```bash
 docker image ls velov-api                                               # l'image d'avant : m<ancienne version>-<commit>
 API_IMAGE=velov-api:m<ancienne version>-<commit> docker compose up -d --no-build --wait api
-curl -s localhost:8000/v1/model                                         # registry.version = l'ancienne version
+curl -s --cacert certs/velov.crt https://$VM/v1/model                  # registry.version = l'ancienne version
 python -m velov.promote --rollback                                      # puis remettre le registre d'accord (@champion)
 ```
 Noter dans le registre la raison du retour arrière (tag `rollback` sur la version) et ouvrir un ticket :
 un modèle retiré ne revient qu'avec une nouvelle décision `velov.promote`.
+
+## 10. Alertes et surveillance du modèle (EX-20, EX-21)
+
+Règles : `docker/prometheus/alerts.yml`, vérifiées par
+`docker compose exec prometheus promtool check rules /etc/prometheus/alerts.yml` après chaque modification
+(puis `docker compose restart prometheus`). État : `http://<hôte>:9090/alerts`.
+
+| Alerte | Déclenche quand | Premier geste | Ensuite |
+|---|---|---|---|
+| `ApiInjoignable` | `up{job="velov-api"} == 0` pendant 1 min | `docker compose ps api`, `docker compose logs --tail 100 api` | `docker compose up -d api` ; si l'image est en cause : image précédente (section 5) |
+| `LatenceHorsSLO` | moins de 95 % des `/v1/predict` sous 200 ms pendant 5 min | panneau « Débit par route » : le débit dépasse-t-il ~35 req/s ? | section 8, « près du plafond » ; si le débit est normal : `docker stats`, journaux du proxy (`rt` vs `urt`) |
+| `Erreurs5xx` | plus de 1 % de 5xx sur `/v1/predict` pendant 5 min | `docker compose logs api \| grep -i error` | base indisponible ou modèle : section 4 ; après une livraison : retour arrière immédiat (section 9) |
+| `LatenceBudgetBrule` | plus de 30 % de requêtes lentes sur 1 h **et** sur 5 min | comme `LatenceHorsSLO` | c'est le signal à traiter en premier : le budget du mois fond |
+
+**Burn rate : facteur et fenêtres.** Le SLO tolère 5 % de requêtes lentes : c'est le budget d'erreur. Un facteur 6
+signifie que le budget est consommé six fois trop vite (30 % de requêtes lentes) : à ce rythme, le budget d'une
+semaine part en un peu plus d'une journée. On l'exige à la fois sur 1 h, pour ne pas alerter sur un pic, et sur
+5 min, pour que l'alerte retombe dès que la cause est corrigée (la fenêtre longue, elle, mettrait une heure à
+oublier). Un facteur plus bas (2 à 3, sur 6 h) attraperait les dégradations lentes, mais n'a pas de sens tant que
+Prometheus ne garde que 15 jours et que le trafic de la VM est celui des tests. À revoir avec un trafic réel.
+
+**Le modèle (`velov.monitor`).** Il se lance sur la VM, avec la base joignable en local :
+```bash
+pip install -r requirements-monitoring.txt && set -a && . ./.env && set +a
+export DATABASE_URL=postgresql+psycopg://velov:$POSTGRES_PASSWORD@127.0.0.1:5432/velov
+python -m velov.monitor --db "$DATABASE_URL" --data data/velov_history.csv --model-dir <dossier du modèle servi> --out reports/
+```
+`--model-dir` doit contenir le `model.onnx` et le `metadata.json` **servis** :
+`docker compose cp api:/app/models/. models/served/`. `--data` correspond aux données d'entraînement indiquées par
+`/v1/model` (champ `data`) ; le monitor prévient si l'empreinte diffère.
+Code de sortie : 0 tout va bien, 1 alerte de performance, 2 rien à surveiller.
+
+| Ce que dit le rapport | Qui | Conduite à tenir |
+|---|---|---|
+| Colonnes en dérive (score > 0,1), erreur stable | équipe data, dans la semaine | lire `reports/drift.html` : saisonnalité attendue (température) ou défaut de qualité (contrats S3) ? une note dans la model card ; **pas de réentraînement automatique** |
+| Ratio global modèle / persistance > 0,90 | équipe data, sous 24 h | comparer à l'entraînement (0,71) ; réentraîner (`velov.retrain`), puis la règle de S4 décide (`velov.promote`) et un membre du binôme valide ; `release.sh` |
+| Une station au-dessus de la persistance (ratio > 1,0, au moins 100 prédictions) | équipe data, sous 24 h | `reports/stations.csv` : les stations en défaut partagent-elles un profil (bureaux, quartier) ? changement d'usage (déménagement) : réentraîner sur des données récentes ; capteur ou station en panne : exclure la station et ouvrir un ticket |
+| Code 2 (aucune prédiction) | astreinte | l'API ne journalise plus : section 4, « Prédictions non journalisées » |
+
+Une dérive ne promeut jamais un modèle toute seule : la règle de S4 et un humain décident.
