@@ -92,3 +92,23 @@ def test_predict_batch_matches_unit_predictions(client, valid_payload):
 def test_predict_batch_rejects_empty_and_oversized(client, valid_payload):
     assert client.post("/v1/predict/batch", json={"items": []}).status_code == 422
     assert client.post("/v1/predict/batch", json={"items": [valid_payload] * 1001}).status_code == 422
+
+
+# --- EX-20 : l'API expose ce que Prometheus lit (S6) ---
+
+
+def test_metrics_expose_model_and_slo_bucket(client, valid_payload):
+    assert client.post("/v1/predict", json=valid_payload).status_code == 200
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    body = r.text
+    assert 'velov_model_info{model_version="0.0.0-test"} 1.0' in body
+    # Le seuil du SLO (200 ms) doit être une borne d'histogramme, sinon le SLI ne se calcule pas (S6 · 14).
+    assert 'http_request_duration_seconds_bucket{handler="/v1/predict",le="0.2",method="POST"}' in body
+    assert 'http_requests_total{handler="/v1/predict",method="POST",status="2xx"}' in body
+
+
+def test_metrics_route_not_instrumented_nor_documented(client):
+    client.get("/metrics")
+    assert 'handler="/metrics"' not in client.get("/metrics").text
+    assert "/metrics" not in client.get("/openapi.json").json()["paths"]

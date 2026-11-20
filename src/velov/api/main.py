@@ -8,8 +8,10 @@ Endpoints attendus (niveaux du TP1 : Must, Should, Stretch) :
     GET  /health            [Should]  liveness : le process répond (ne dépend pas du modèle)
     GET  /ready             [Should]  readiness : 200 si le modèle est chargé, 503 sinon
     GET  /v1/model          [S4]      quel modèle tourne : version du registre, run, données (EX-13)
+    GET  /metrics           [S6]      métriques Prometheus (débit, erreurs, latence, modèle servi)
 
 Chaque réponse porte l'en-tête X-Process-Time-Ms : le temps passé DANS l'API (S1, mesuré au TP5).
+/metrics n'est lu que par Prometheus, dans le réseau du compose : le proxy le renvoie en 404 (EX-19).
 
 Lancement :
     uvicorn velov.api.main:app --reload
@@ -28,6 +30,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from prometheus_client import Gauge
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from velov import db
 from velov.api.schemas import (
@@ -43,6 +47,12 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("velov.api")
 
 STATE: dict = {"model": None, "metadata": None}
+
+# Quel modèle répond, vu de Prometheus : un label à une seule valeur à la fois (la version servie).
+MODEL_INFO = Gauge("velov_model_info", "Modèle servi par l'API", ["model_version"])
+# Seaux de latence : 0.2 s est le seuil du SLO (EX-16). Sans cette borne, « 95 % sous 200 ms » ne se
+# calcule pas (S6 · 14). Au-delà de 1 s, Prometheus sait seulement que c'est « plus de 1 s ».
+LATENCY_BUCKETS = (0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1)
 
 
 def load_model(model_dir: Path) -> tuple[object, dict]:
@@ -65,6 +75,8 @@ async def lifespan(app: FastAPI):
     try:
         STATE["model"], STATE["metadata"] = load_model(model_dir)
         logger.info("Modèle %s chargé", STATE["metadata"]["model_version"])
+        MODEL_INFO.clear()
+        MODEL_INFO.labels(model_version=STATE["metadata"]["model_version"]).set(1)
     except Exception:
         logger.exception("Échec du chargement du modèle depuis %s", model_dir)
     url = db.database_url()
@@ -75,9 +87,15 @@ async def lifespan(app: FastAPI):
             logger.exception("Base de données indisponible : les prédictions ne seront pas enregistrées")
     yield
     STATE.update(model=None, metadata=None)
+    MODEL_INFO.clear()
 
 
 app = FastAPI(title="Vélo'v availability API", version="1.0.0", lifespan=lifespan)
+
+# handler = la route (jamais une donnée de la requête) ; status groupé en 2xx, 4xx, 5xx.
+Instrumentator(excluded_handlers=["/metrics"]).instrument(app, latency_lowr_buckets=LATENCY_BUCKETS).expose(
+    app, include_in_schema=False
+)
 
 
 @app.middleware("http")
@@ -137,13 +155,13 @@ def _predict(items: list[PredictionRequest]) -> list[PredictionResponse]:
     ]
 
 
-def _log(responses: list[PredictionResponse]) -> None:
-    """Journalise les prédictions (EX-08) ; une base indisponible ne fait jamais échouer la prédiction."""
+def _log(items: list[PredictionRequest], responses: list[PredictionResponse]) -> None:
+    """Journalise entrées et prédictions (EX-08, EX-21) ; une base indisponible ne fait jamais échouer la prédiction."""
     url = db.database_url()
     if not url:
         return
     try:
-        db.save_predictions(url, responses)
+        db.save_predictions(url, items, responses)
     except Exception:
         logger.exception("Échec de l'enregistrement de la prédiction")
 
@@ -151,12 +169,12 @@ def _log(responses: list[PredictionResponse]) -> None:
 @app.post("/v1/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
     responses = _predict([request])
-    _log(responses)
+    _log([request], responses)
     return responses[0]
 
 
 @app.post("/v1/predict/batch", response_model=BatchPredictionResponse)
 def predict_batch(request: BatchPredictionRequest) -> BatchPredictionResponse:
     responses = _predict(request.items)
-    _log(responses)
+    _log(request.items, responses)
     return BatchPredictionResponse(predictions=responses)

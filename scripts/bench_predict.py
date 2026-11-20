@@ -96,7 +96,7 @@ def time_steps(items: list[PredictionRequest], run_model, version: str, log=None
     out = {step: (t[i + 1] - t[i]) * 1000 for i, step in enumerate(STEPS)}
     if log is not None:
         start = time.perf_counter()
-        log(responses)
+        log(items, responses)
         out["5. journalisation"] = (time.perf_counter() - start) * 1000
     return out
 
@@ -160,7 +160,7 @@ def main() -> int:
         from velov import db
 
         db.init_db(args.database_url)
-        log = lambda responses: db.save_predictions(args.database_url, responses)  # noqa: E731
+        log = lambda items, responses: db.save_predictions(args.database_url, items, responses)  # noqa: E731
 
     print(
         f"poste : {platform.platform()}, {os.cpu_count()} cœurs logiques, Python {platform.python_version()}, "

@@ -10,3 +10,5 @@ protobuf==6.33.6
 pandas==3.0.2
 numpy==2.4.6
 psycopg[binary]==3.2.10
+# Métriques Prometheus sur /metrics (S6) : débit, erreurs, histogramme de latence par route.
+prometheus-fastapi-instrumentator==8.1.0
