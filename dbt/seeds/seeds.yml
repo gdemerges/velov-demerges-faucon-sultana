@@ -1,0 +1,28 @@
+version: 2
+
+seeds:
+  - name: poi_lyon
+    description: >
+      Gares et établissements d'enseignement supérieur de la métropole, extraits d'OpenStreetMap
+      (© les contributeurs OpenStreetMap, ODbL) par scripts/refresh_poi.py.
+    config:
+      column_types: {osm_id: text, kind: text, name: text, lat: double precision, lon: double precision}
+    columns:
+      - name: osm_id
+        data_tests: [not_null, unique]
+      - name: kind
+        data_tests:
+          - accepted_values:
+              arguments: {values: [gare, universite]}
+
+  - name: events_lyon
+    description: >
+      Événements qui changent l'usage des vélos, un jour par ligne, ajoutés à la main avec leur source.
+      Seules des dates vérifiées y entrent (matchs, grèves TCL, travaux : au fil de l'eau).
+    config:
+      column_types: {event_date: date, event: text, source: text}
+    columns:
+      - name: event_date
+        data_tests: [not_null]
+      - name: source
+        data_tests: [not_null]

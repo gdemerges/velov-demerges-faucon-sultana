@@ -44,3 +44,17 @@ models:
     data_tests:
       - dbt_utils_free_unique_combination:
           arguments: {columns: [station_id, timestamp]}
+
+  - name: gold_features_hourly
+    description: >
+      Features d'enrichissement (historique, voisines, prévision météo, contexte de la station, événements),
+      une ligne par ligne de gold_training_hourly. Collectées pour mesurer leur apport sur données réelles ;
+      le modèle servi ne les utilise pas encore.
+    data_tests:
+      - dbt_utils_free_unique_combination:
+          arguments: {columns: [station_id, timestamp]}
+    columns:
+      - name: neighbors_occupancy
+        data_tests:
+          - value_between:
+              arguments: {min_value: 0, max_value: 1}

@@ -11,3 +11,15 @@ sources:
             data_tests: [not_null]
           - name: observed_at
             data_tests: [not_null]
+      - name: station_info
+        description: Référentiel des stations (position, commune, pole, altitude), mis à jour à chaque relevé réel.
+        columns:
+          - name: station_id
+            data_tests: [not_null, unique]
+      - name: weather_forecast
+        description: Prévision Open-Meteo publiée à l'heure du relevé (issued_at) pour les heures suivantes.
+        columns:
+          - name: issued_at
+            data_tests: [not_null]
+          - name: target_at
+            data_tests: [not_null]

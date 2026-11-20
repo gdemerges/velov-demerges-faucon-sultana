@@ -1,0 +1,96 @@
+osm_id,kind,name,lat,lon
+node/14228169114,gare,Chaponost,45.698462,4.7643
+node/4290854872,gare,Collonges Fontaines,45.829087,4.846356
+node/9682152748,gare,Couzon-au-Mont-d'Or,45.848704,4.829282
+node/12918785199,gare,Francheville,45.73371,4.769625
+node/9924526864,gare,Lyon Jean Macé,45.744963,4.841834
+node/4290857016,gare,Lyon Part-Dieu,45.760573,4.860163
+node/4290857018,gare,Lyon Perrache,45.748322,4.825327
+node/13236222075,gare,Lyon Vaise,45.780278,4.803535
+node/13239032058,gare,Lyon-Saint-Paul,45.766123,4.826671
+node/12533949884,gare,Oullins,45.716684,4.813383
+node/9924526220,gare,Saint-Priest,45.686372,4.934496
+node/4290859477,gare,Sathonay-Rillieux,45.820078,4.875517
+node/7257505688,gare,Tassin,45.761701,4.758621
+node/13208794098,gare,Vénissieux,45.705055,4.888303
+node/13248351376,gare,Écully la Demi-Lune,45.765804,4.779261
+way/159288153,universite,,45.740751,4.882434
+node/12290284857,universite,AFIP,45.779489,4.878989
+node/13674812501,universite,Bâtiment Clio,45.751247,4.838073
+way/62350742,universite,Bâtiment Jean-François Cier,45.740621,4.88218
+way/691377254,universite,Bélénos,45.750398,4.836412
+node/3588534986,universite,CEFAM,45.768404,4.805942
+way/125105964,universite,Campus René Cassin,45.769978,4.806533
+way/234559998,universite,Campus René Cassin,45.768677,4.806091
+way/701657155,universite,Campus Région du Numérique,45.780653,4.748081
+way/25310921,universite,Centrale Lyon,45.783331,4.76888
+way/700244365,universite,Centre Berthelot,45.746501,4.835569
+node/7463183549,universite,Centre de langues,45.719343,4.918904
+way/656695312,universite,Confluence Institute for Innovation and Creative Strategies in Architecture,45.738952,4.821092
+node/13391567949,universite,Département composante biosciences,45.781306,4.870141
+node/13391567951,universite,Département composante génie électrique et des procédés,45.780238,4.871175
+node/13391567955,universite,Département composante informatique,45.78211,4.865348
+node/13391567950,universite,Département composante mécanique,45.780549,4.870997
+node/12786565537,universite,EICAR,45.77634,4.870409
+way/1029558276,universite,EICAR Lyon,45.776718,4.870388
+way/1231195521,universite,EMLyon Business School,45.741178,4.837612
+way/1320179052,universite,ENSATT,45.753367,4.811457
+node/13191140384,universite,EPITA Lyon,45.770472,4.805976
+node/13191140386,universite,ESME Lyon,45.770474,4.806153
+node/14069213076,universite,Ecoris,45.726782,4.837965
+node/14069213077,universite,Ecoris,45.726718,4.838721
+relation/6504838,universite,Faculté de Médecine Lyon Est - Domaine Rockefeller,45.741332,4.881139
+way/295611732,universite,Faculté de Médecine et de Maïeutique Lyon Sud - Charles Mérieux,45.704291,4.808223
+way/437948348,universite,Faculté de médecine Laennec - Domaine de la Buire,45.738811,4.887568
+relation/971595,universite,Faculté de médecine Rockefeller,45.741231,4.881157
+node/13391567954,universite,Faculté des sciences et technologies - Département chimie,45.782971,4.869681
+node/13391567953,universite,Faculté des sciences et technologies - Département de physique,45.782857,4.869142
+node/13391567952,universite,Faculté des sciences et technologies - Département mathématiques,45.782908,4.869408
+node/13452439632,universite,I.H.E.C.F. Lyon,45.770342,4.805174
+node/3588531207,universite,IDRAC - École de Commerce et de Management,45.76832,4.805944
+node/13191140387,universite,IPSA Lyon,45.770474,4.806248
+node/4742210023,universite,ISCPA Lyon - Institut Supérieur des Médias,45.768364,4.805943
+node/3703348131,universite,IUT Jean Moulin Lyon 3,45.74874,4.836651
+way/23728251,universite,Institut National Supérieur du Professorat et de l'Éducation,45.774343,4.820379
+node/7379273259,universite,Institut National des Formations Notariales,45.749269,4.837809
+node/5269941637,universite,Institut d'Urbanisme de Lyon,45.746648,4.836105
+relation/9730207,universite,Institut d'Études Politiques de Lyon,45.746512,4.835252
+node/7469510151,universite,Institut de Psychologie,45.721218,4.91767
+node/7469549141,universite,Institut de la communication,45.720741,4.918092
+node/5726913477,universite,"Institut des sciences sociales, économiques et politiques",45.743061,4.81804
+node/7230742338,universite,Institut international pour la Francophonie,45.749375,4.837479
+node/1350325559,universite,LIRIS,45.722214,4.916391
+node/1614261813,universite,Les studios Lumières,45.747423,4.862283
+relation/17848915,universite,Lyon 1 Université,44.651726,5.153253
+relation/7210822,universite,Lyon 1 Université,45.783181,4.873079
+way/394434727,universite,Lyon-Tech La Doua,45.783181,4.873079
+node/13468405519,universite,MBway Lyon,45.739485,4.841554
+node/13640398323,universite,MyDigitalSchool Lyon,45.7533,4.870431
+way/262839175,universite,Observatoire de Lyon,45.693904,4.782721
+way/62348580,universite,Pavillon Nétien,45.74172,4.879396
+node/5343104848,universite,Perf Santé,45.699147,4.824172
+node/13509255386,universite,Pigier Lyon,45.758924,4.862132
+way/155430670,universite,Polytech Lyon,45.779368,4.868159
+node/13191140385,universite,Sup Biotech Lyon,45.770474,4.806073
+way/797821577,universite,UFR Temps et Territoires,45.717677,4.919383
+node/7462347331,universite,"UFR anthropologie, sociologie, science politique",45.721158,4.917569
+node/7469554734,universite,UFR droit et science politique,45.720182,4.917376
+node/7463149463,universite,"UFR lettres, sciences du langage et arts",45.722798,4.916521
+way/164823681,universite,Université Catholique de Lyon,45.756902,4.829012
+way/82252569,universite,Université Catholique de Lyon,45.751523,4.826582
+way/99685363,universite,Université Catholique de Lyon - Campus Saint-Paul,45.746604,4.826405
+way/80222019,universite,Université Gustave Eiffel - Campus de Lyon,45.735937,4.925331
+way/23782203,universite,Université Jean Moulin - Lyon 3 - Site des quais,45.752089,4.837727
+relation/18073255,universite,Université Lumière - Lyon 2 (Campus Porte des Alpes),45.7206,4.91746
+relation/7168880,universite,Université Lumière - Lyon 2 - Campus Berges du Rhône,45.749109,4.836515
+way/5235854,universite,"Université Lyon 1, Site de Gerland",45.725827,4.82587
+way/694531440,universite,Université Lyon 3 - Campus Manufacture des Tabacs,45.748012,4.860551
+way/1199163221,universite,École Catholique d'Arts et Métiers de Lyon,45.764431,4.824523
+way/708581651,universite,École Catholique des Arts et Métiers,45.763398,4.822771
+node/13511938677,universite,École International Tunon,45.770372,4.805259
+way/48754418,universite,École Nationale Supérieure de la Police,45.813454,4.814377
+way/95144113,universite,École Normale Supérieure de Lyon - Site Jacques Monod,45.729768,4.827099
+way/5212492,universite,École Normale Supérieure de Lyon - Site René Descartes,45.733171,4.833616
+node/13900820201,universite,École Supérieure de Comptabilité et de Gestion,45.764732,4.864974
+node/7935661543,universite,École de Psychologues praticiens,45.763119,4.843227
+node/499618290,universite,Équipe de Recherche ELICO,45.720813,4.918079

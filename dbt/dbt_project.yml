@@ -15,3 +15,7 @@ models:
     gold:
       +schema: gold
       +materialized: table
+
+seeds:
+  velov:
+    +schema: reference
