@@ -6,9 +6,10 @@
 #   COMPOSE_FILE=compose.yaml:compose.mlflow.yaml:compose.monitoring.yaml
 #   docker compose up -d
 #   API     : https://<ip-de-la-vm>/            (443, via le proxy ; le port 8000 n'est plus publié)
-#   Grafana : http://<ip-de-la-vm>:3000
+#   Grafana : https://<ip-de-la-vm>/grafana/   (via le proxy ; le port 3000 n'est plus publié)
 #
-# Prérequis : certs/velov.crt et certs/velov.key (scripts/make_cert.sh), GRAFANA_ADMIN_PASSWORD dans .env.
+# Prérequis : certs/velov.crt et certs/velov.key (scripts/make_cert.sh), GRAFANA_ADMIN_PASSWORD et
+# GRAFANA_DB_PASSWORD dans .env.
 
 services:
   api:
@@ -30,6 +31,7 @@ services:
       - ./certs:/etc/nginx/certs:ro
     depends_on:
       - api
+      - grafana
     restart: unless-stopped
 
   prometheus:
@@ -49,15 +51,36 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD manquant, voir .env.example}
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # Servi par le proxy sous /grafana/ (S6, Should) : Grafana doit connaître ce préfixe pour ses liens.
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Mot de passe de grafana_ro, lu par docker/grafana/provisioning/datasources/postgres.yml.
+      GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD manquant, voir .env.example}
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
-    ports:
-      - "3000:3000"
     depends_on:
       - prometheus
     restart: unless-stopped
+
+  # Crée ou met à jour l'utilisateur grafana_ro (lecture seule sur predictions), puis s'arrête.
+  # Après l'API : c'est elle qui crée la table predictions au démarrage.
+  grafana-db-init:
+    image: postgres:16-alpine
+    environment:
+      PGHOST: db
+      PGUSER: velov
+      PGDATABASE: velov
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant, voir .env.example}
+      RO_PASSWORD: ${GRAFANA_DB_PASSWORD:?GRAFANA_DB_PASSWORD manquant, voir .env.example}
+    command: ["sh", "-c", "psql -v ON_ERROR_STOP=1 -v pw=\"$$RO_PASSWORD\" -f /grafana_ro.sql"]
+    volumes:
+      - ./docker/postgres/grafana_ro.sql:/grafana_ro.sql:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   promdata:

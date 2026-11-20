@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 41,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-1h",
@@ -233,6 +233,62 @@
       "fieldConfig": {
         "defaults": {},
         "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Erreur réelle par heure : modèle contre persistance",
+      "description": "Prédiction faite à t jugée avec l'observation de t + 1 h (table predictions, utilisateur grafana_ro). Une ligne par station et par heure (la plus récente). Le modèle doit rester sous la persistance.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "velov-pg"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "timeFrom": "7d",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "velov-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "WITH p AS (\n  SELECT DISTINCT ON (station_id, observed_at) station_id, observed_at, bikes_available, predicted_bikes\n  FROM predictions\n  WHERE observed_at IS NOT NULL AND $__timeFilter(observed_at)\n  ORDER BY station_id, observed_at, created_at DESC\n)\nSELECT p.observed_at AS time,\n       avg(abs(p.predicted_bikes - t.bikes_available)) AS \"MAE modèle\",\n       avg(abs(p.bikes_available - t.bikes_available)) AS \"MAE persistance\"\nFROM p\nJOIN p t ON t.station_id = p.station_id AND t.observed_at = p.observed_at + interval '1 hour'\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never"
+          },
+          "displayName": "${__field.name}"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     }
   ],

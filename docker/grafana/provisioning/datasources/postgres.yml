@@ -1,0 +1,15 @@
+# Table predictions en lecture seule (utilisateur grafana_ro, docker/postgres/grafana_ro.sql) :
+# l'erreur réelle par heure, modèle contre persistance, à côté des métriques du service.
+apiVersion: 1
+datasources:
+  - name: PostgreSQL
+    type: grafana-postgresql-datasource
+    uid: velov-pg
+    url: db:5432
+    user: grafana_ro
+    jsonData:
+      database: velov
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
