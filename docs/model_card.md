@@ -3,16 +3,20 @@
 > Mise à jour à chaque nouvelle version promue. Inspirée de Mitchell et al., "Model Cards for Model Reporting" (2019).
 
 ## 1. Identité
-- Nom / version : `velov-availability`, `model_version` 0.1.0, servi sur la VM depuis le TP6 (20/11/2026) ;
-  hors registre (`registry` vide dans `/v1/model`)
-- Date d'entraînement : 2026-11-20 09:08 UTC, pendant le build de l'image (`MODEL_FROM=train`, ADR-0004) :
-  simulateur 90 jours, seed 42, empreinte des données `4a861c99`, SHA-256 de l'artefact `b706545f`
+- Nom / version : `velov-availability`, `model_version` **0.2.0**, servi sur la VM depuis le 20/11/2026 (10 h UTC) ;
+  hors registre (`registry` vide dans `/v1/model`). Nouveauté : jours fériés et vacances scolaires (section 5)
+- Date d'entraînement : 2026-11-20 09:58 UTC, pendant le build de l'image (`MODEL_FROM=train`, ADR-0004) :
+  simulateur 90 jours, seed 42, empreinte des données `4a861c99`, SHA-256 de l'artefact `e822e260`
 - Responsables (binôme) : Demerges / Faucon / Sultana
-- Emplacement de l'artefact : dans l'image `velov-api:0.1.0-21a1b81` (`/app/models/model.onnx` + `metadata.json`),
+- Emplacement de l'artefact : dans l'image `velov-api:0.2.0-d9be716` (`/app/models/model.onnx` + `metadata.json`),
   copié pour le monitoring dans `~/velov-mlops/models/served/` (runbook, section 10)
+- Comparé au modèle précédent (0.1.0, image `velov-api:0.1.0-21a1b81`, toujours présente sur la VM pour un retour
+  arrière) : MAE à l'entraînement 1,354 contre 1,339 ; semaine normale rejouée 1,350 contre 1,309 (ratio 0,74
+  contre 0,72). Le 0.2.0 ne bat pas le 0.1.0 sur le simulateur : la règle de S4 ne l'aurait pas promu. Il est
+  servi par décision du binôme, pour mesurer l'effet du calendrier sur les données réelles.
 - Historique : jusqu'au TP5, le modèle servi était la version 3 du registre MLflow (`@champion`, `model_version`
-  0.3.0, run `71af0a0d`, commit `2a1bec7`), livrée par `scripts/release.sh`. Le dépôt a été réinstallé sur la VM
-  au TP6 et son registre MLflow est vide : ce modèle n'est plus servi. Les sections 3 et 4 décrivent encore la v3.
+  0.3.0, run `71af0a0d`, commit `2a1bec7`). Le dépôt a été réinstallé sur la VM au TP6 et son registre est vide.
+  Les sections 3 et 4 décrivent encore la v3 ; la section 8 (Monitoring) mesure le 0.1.0.
 
 ## 2. Usage prévu
 - Ce que le modèle prédit : le nombre de vélos disponibles dans une heure, par station Vélo'v
