@@ -201,6 +201,25 @@ Règles : `docker/prometheus/alerts.yml`, vérifiées par
 | `LatenceHorsSLO` | moins de 95 % des `/v1/predict` sous 200 ms pendant 5 min | panneau « Débit par route » : le débit dépasse-t-il ~35 req/s ? | section 8, « près du plafond » ; si le débit est normal : `docker stats`, journaux du proxy (`rt` vs `urt`) |
 | `Erreurs5xx` | plus de 1 % de 5xx sur `/v1/predict` pendant 5 min | `docker compose logs api \| grep -i error` | base indisponible ou modèle : section 4 ; après une livraison : retour arrière immédiat (section 9) |
 | `LatenceBudgetBrule` | plus de 30 % de requêtes lentes sur 1 h **et** sur 5 min | comme `LatenceHorsSLO` | c'est le signal à traiter en premier : le budget du mois fond |
+| `ModeleDegrade` | le dernier `velov.monitor` a levé une alerte (code 1) | `reports/<date>/monitor.txt` | tableau « Le modèle » ci-dessous |
+| `MonitorAbsent` | aucun monitor ayant jugé le modèle depuis 26 h | `tail logs/monitor.log`, `crontab -l` | `logs/monitor.last.txt` ; `RIEN-À-JUGER` : l'API ne journalise plus (section 4) |
+| `DbtBuildEnEchec` | le dernier `dbt build` planifié a échoué | `logs/dbt_build.last.txt` | section 7, « `dbt build` échoue » |
+| `DbtBuildAbsent` | aucun `dbt build` depuis 3 h | `crontab -l`, `systemctl status cron` | relancer `scripts/dbt_build.sh` à la main |
+
+**Notifications Discord.** Prometheus envoie les alertes à Alertmanager (`docker/alertmanager/alertmanager.yml`),
+qui les regroupe et poste dans le salon Discord de l'équipe, avec un second message quand l'alerte retombe.
+Rappel toutes les 4 h pour le service, toutes les 24 h pour le modèle et dbt. Les tâches planifiées poussent leur
+résultat dans le Pushgateway (port 9091, local à la VM), que Prometheus lit.
+- **Webhook** : `secrets/discord_webhook_url` sur la VM, hors de git, lisible par le conteneur (mode 644). Quiconque
+  a l'URL peut écrire dans le salon : en cas de fuite, la supprimer dans Discord (Paramètres du salon,
+  Intégrations, Webhooks), en créer une autre et remplacer le fichier. Alertmanager relit le fichier à chaque envoi.
+- **Tester la chaîne sans incident** :
+  `docker compose exec alertmanager amtool alert add TestDiscord severity=test summary="test" runbook="-" --alertmanager.url=http://localhost:9093`
+  (message sous 30 s).
+- **Silence pendant une intervention prévue** :
+  `docker compose exec alertmanager amtool silence add alertname=ApiInjoignable --duration=1h --comment="maintenance" --alertmanager.url=http://localhost:9093`.
+- **Après une modification** de `prometheus.yml` ou `alerts.yml` : `docker compose restart prometheus` (le fichier
+  est monté, le conteneur ne le relit pas tout seul) ; de `alertmanager.yml` : `docker compose restart alertmanager`.
 
 **Burn rate : facteur et fenêtres.** Le SLO tolère 5 % de requêtes lentes : c'est le budget d'erreur. Un facteur 6
 signifie que le budget est consommé six fois trop vite (30 % de requêtes lentes) : à ce rythme, le budget d'une
