@@ -245,11 +245,14 @@ Code de sortie : 0 tout va bien, 1 alerte de performance, 2 rien à surveiller.
 | Ce que dit le rapport | Qui | Conduite à tenir |
 |---|---|---|
 | Colonnes en dérive (score > 0,1), erreur stable | équipe data, dans la semaine | lire `reports/drift.html` : saisonnalité attendue (température) ou défaut de qualité (contrats S3) ? une note dans la model card ; **pas de réentraînement automatique** |
-| Ratio global modèle / persistance > 0,90 | équipe data, sous 24 h | comparer à l'entraînement (0,71) ; réentraîner (`velov.retrain`), puis la règle de S4 décide (`velov.promote`) et un membre du binôme valide ; `release.sh` |
-| Une station au-dessus de la persistance (ratio > 1,0, au moins 100 prédictions) | équipe data, sous 24 h | `reports/stations.csv` : les stations en défaut partagent-elles un profil (bureaux, quartier) ? changement d'usage (déménagement) : réentraîner sur des données récentes ; capteur ou station en panne : exclure la station et ouvrir un ticket |
+| Ratio global modèle / persistance > 0,87 (fenêtre de 3 jours) | équipe data, sous 24 h | comparer à l'entraînement (0,71) ; réentraîner (`velov.retrain`), puis la règle de S4 décide (`velov.promote`) et un membre du binôme valide ; `release.sh` |
+| Une station nettement au-dessus de la persistance (ratio > 1,19, au moins 64 prédictions) | équipe data, sous 24 h | `reports/stations.csv` : les stations en défaut partagent-elles un profil (bureaux, quartier) ? changement d'usage (déménagement) : réentraîner sur des données récentes ; capteur ou station en panne : exclure la station et ouvrir un ticket |
 | Code 2 (aucune prédiction) | astreinte | l'API ne journalise plus : section 4, « Prédictions non journalisées » |
 
 Une dérive ne promeut jamais un modèle toute seule : la règle de S4 et un humain décident.
+
+Seuils et fenêtre calibrés par backtest ([ADR-0005](adr/0005-seuils-monitoring.md)) ; après un changement de
+données (vraies stations) : `python -m velov.backtest`, puis reporter les seuils dans `velov/monitor.py`.
 
 **Exécution quotidienne.** La crontab de la VM lance `scripts/monitor_daily.sh` chaque jour à 6 h 10 UTC. Il juge
 le modèle que sert l'API à cet instant (copié depuis le conteneur), écrit le rapport dans `reports/<date>/` et

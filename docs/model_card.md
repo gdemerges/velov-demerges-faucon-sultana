@@ -121,13 +121,11 @@ aussi les plus mal prédites (autour de 1,8 à 2,0), mais elles restent bien sou
   0,07 de l'entraînement.
 - Déménagement : **on réentraîne** sur des données qui contiennent le nouveau comportement (`velov.retrain`).
   La promotion suit la règle de S4 (`velov.promote`, validée par un membre du binôme), sans automatisme.
-- **Seuils retenus** :
-  - ratio global > **0,90**. C'est 0,19 au-dessus de l'entraînement : il laisse passer les semaines
-    ordinaires (0,72 à 0,78) et se déclenche quand le modèle a perdu plus de la moitié de son avance sur la
-    persistance ;
-  - par station, modèle pire que la persistance (ratio > **1,0**) sur au moins **100** prédictions (environ
-    4 jours). En dessous de 100 prédictions, la MAE d'une station est trop bruitée pour conclure.
-- Ces seuils sont choisis sur trois semaines seulement. Leur calibration par backtest (taux de fausses alertes,
-  délai de détection) est l'objet de l'extension ([extension.md](extension.md)).
+- **Seuils retenus** (calibrés par backtest, [ADR-0005](adr/0005-seuils-monitoring.md)) : fenêtre de **3 jours**,
+  ratio global > **0,87**, pire station > **1,19** sur au moins **64** prédictions. Sur 55 passages quotidiens
+  rejoués : 2 % de fausses alertes (16 % avec les seuils du TP6, 0,90 / 1,0 / 100 sur 7 jours), déménagement
+  détecté dans 100 % des cas, en 54 h médianes (102 h au TP6).
+- Limite : avec un passage par jour, seuls 14 % des déménagements sont vus en moins de 48 h. Pour faire mieux,
+  il faut un passage plus fréquent, pas d'autres seuils (mesure en S8).
 - On n'alerte pas sur la dérive : la semaine normale dérive déjà.
 

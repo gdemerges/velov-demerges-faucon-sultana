@@ -35,13 +35,22 @@ produisent, ni avec quel délai ils détectent une dégradation.
   4. **Résultat** : un tableau scénario × seuils (détection, délai, fausses alertes), et les seuils retenus
      dans `velov/monitor.py`, justifiés dans un ADR (ADR-0005).
 
+## Avancement (20/11)
+
+- Fait : backtest et calibration (étapes 1 et 2), tableau pour froid et déménagement, seuils reportés dans
+  `velov/monitor.py`, [ADR-0005](adr/0005-seuils-monitoring.md) ; crontab quotidienne, trace et alerte Discord.
+  Résultat : fenêtre de 3 jours, 2 % de fausses alertes au lieu de 16 %, déménagement détecté en 54 h médianes ;
+  **pas sous 48 h** avec un passage par jour.
+- Reste : scénarios conçus (capteur bloqué, chantier) dans `velov.replay` et `velov.backtest.SCENARIOS`, avec
+  leurs tests ; mesure du délai réel en S8.
+
 ## Où ça tourne
 
-- **En local** : le backtest (`scripts/backtest_monitor.py`) lit le CSV et calcule les prédictions avec le
+- **En local** : le backtest (`python -m velov.backtest`) lit le CSV et calcule les prédictions avec le
   graphe ONNX, sans passer par l'API ni par la base. Les tests pytest couvrent la calibration et les
   scénarios conçus.
 - **Sur la VM, en S7** : `velov.monitor` lancé chaque jour par la crontab. Un code de sortie 1 laisse une trace
-  qu'on retrouve : une ligne dans `reports/monitor.log` et un fichier `reports/<date>/` avec `drift.html`,
+  qu'on retrouve : une ligne dans `logs/monitor.log` et un fichier `reports/<date>/` avec `drift.html`,
   `monitor.json` et `stations.csv`. On rejoue ensuite un scénario conçu pour vérifier qu'il est détecté.
 - **Sur la VM, en S8** : on mesure le délai de détection réel sur un scénario rejoué heure par heure
   (`--pause`), avec le monitor planifié toutes les heures pendant la séance.

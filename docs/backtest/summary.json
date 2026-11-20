@@ -1,0 +1,134 @@
+[
+  {
+    "window_days": 7,
+    "thresholds": {
+      "name": "seuils TP6",
+      "ratio_max": 0.9,
+      "station_ratio_max": 1.0,
+      "station_min_predictions": 100
+    },
+    "false_alarms": {
+      "false_alarm_global": 0.0,
+      "false_alarm_station": 0.164,
+      "false_alarm_any": 0.164,
+      "normal_runs": 55
+    },
+    "detection": [
+      {
+        "scenario": "demenagement",
+        "thresholds": "seuils TP6",
+        "starts": 55,
+        "detected_48h": 0.055,
+        "detected_7d": 1.0,
+        "median_delay_h": 102.0
+      },
+      {
+        "scenario": "froid",
+        "thresholds": "seuils TP6",
+        "starts": 55,
+        "detected_48h": 0.055,
+        "detected_7d": 0.436,
+        "median_delay_h": 90.0
+      }
+    ]
+  },
+  {
+    "window_days": 2,
+    "thresholds": {
+      "name": "calibrés 2 j",
+      "ratio_max": 0.91,
+      "station_ratio_max": 1.3,
+      "station_min_predictions": 43
+    },
+    "false_alarms": {
+      "false_alarm_global": 0.018,
+      "false_alarm_station": 0.018,
+      "false_alarm_any": 0.036,
+      "normal_runs": 55
+    },
+    "detection": [
+      {
+        "scenario": "demenagement",
+        "thresholds": "calibrés 2 j",
+        "starts": 55,
+        "detected_48h": 0.218,
+        "detected_7d": 0.855,
+        "median_delay_h": 54.0
+      },
+      {
+        "scenario": "froid",
+        "thresholds": "calibrés 2 j",
+        "starts": 55,
+        "detected_48h": 0.036,
+        "detected_7d": 0.164,
+        "median_delay_h": 54.0
+      }
+    ]
+  },
+  {
+    "window_days": 3,
+    "thresholds": {
+      "name": "calibrés 3 j",
+      "ratio_max": 0.87,
+      "station_ratio_max": 1.19,
+      "station_min_predictions": 64
+    },
+    "false_alarms": {
+      "false_alarm_global": 0.0,
+      "false_alarm_station": 0.018,
+      "false_alarm_any": 0.018,
+      "normal_runs": 55
+    },
+    "detection": [
+      {
+        "scenario": "demenagement",
+        "thresholds": "calibrés 3 j",
+        "starts": 55,
+        "detected_48h": 0.145,
+        "detected_7d": 1.0,
+        "median_delay_h": 54.0
+      },
+      {
+        "scenario": "froid",
+        "thresholds": "calibrés 3 j",
+        "starts": 55,
+        "detected_48h": 0.073,
+        "detected_7d": 0.291,
+        "median_delay_h": 78.0
+      }
+    ]
+  },
+  {
+    "window_days": 7,
+    "thresholds": {
+      "name": "calibrés 7 j",
+      "ratio_max": 0.8,
+      "station_ratio_max": 1.06,
+      "station_min_predictions": 151
+    },
+    "false_alarms": {
+      "false_alarm_global": 0.018,
+      "false_alarm_station": 0.0,
+      "false_alarm_any": 0.018,
+      "normal_runs": 55
+    },
+    "detection": [
+      {
+        "scenario": "demenagement",
+        "thresholds": "calibrés 7 j",
+        "starts": 55,
+        "detected_48h": 0.036,
+        "detected_7d": 1.0,
+        "median_delay_h": 78.0
+      },
+      {
+        "scenario": "froid",
+        "thresholds": "calibrés 7 j",
+        "starts": 55,
+        "detected_48h": 0.0,
+        "detected_7d": 0.018,
+        "median_delay_h": 126.0
+      }
+    ]
+  }
+]
